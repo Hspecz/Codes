@@ -1,0 +1,241 @@
+// ---------------------------------------------------
+// 1. Palace of Ghost Entry Command @pog (per-account cooldown, party leader check)
+-	script	pog_command	-1,{
+	OnInit:
+		bindatcmd "pog", strnpcinfo(0) + "::OnPogCommand", 0, 99;
+		end;
+
+	OnPogCommand:
+		.@hour = gettime(3);
+		.@minute = gettime(2);
+
+		// Event open only at 12:00 AM and 12:00 PM, first 10 minutes
+		if (!((.@hour == 0 || .@hour == 12) && .@minute < 10)) {
+			dispbottom "Palace of Ghost is only open at 12:00 AM and 12:00 PM. Entry is allowed for 10 minutes only.";
+			end;
+		}
+
+		// Check party existence and party leader
+		.@party_id = getcharid(1);
+		if (.@party_id <= 0) {
+			dispbottom "You do not have a party.";
+			end;
+		}
+
+		if (getcharid(0) != getpartyleader(.@party_id, 1)) {
+			dispbottom "You are not the Party Leader.";
+			end;
+		}
+
+		// Per-account cooldown key name
+		.@var_cooldown = "pog_cooldown";
+
+		// Get player's last enter time from variables (seconds since epoch)
+		.@last_time = getvar(0, .@var_cooldown);
+		.@now = gettimetick(2);
+
+		if (.@last_time > 0 && .@now - .@last_time < 259200) { // 3 days cooldown (259200 sec)
+			.@remaining = 259200 - (.@now - .@last_time);
+			.@hrs = .@remaining / 3600;
+			.@mins = (.@remaining % 3600) / 60;
+
+			.@next = .@last_time + 259200;
+			.@nyear = gettime(6, .@next);
+			.@nmonth = gettime(5, .@next);
+			.@nday = gettime(4, .@next);
+			.@nhour = gettime(3, .@next);
+			.@nmin = gettime(2, .@next);
+
+			dispbottom "You must wait " + .@hrs + " hours and " + .@mins + " minutes before entering Palace of Ghost again.";
+			dispbottom "Next available on: " + .@nmonth + "/" + .@nday + "/" + .@nyear + " at " + sprintf("%02d:%02d", .@nhour, .@nmin);
+			end;
+		}
+
+		// Create instance for the party
+		if (instance_create("PalaceOfGhost", .@party_id) < 0) {
+			dispbottom "Failed to create the Palace of Ghost instance.";
+			end;
+		}
+		if (!instance_attach("PalaceOfGhost")) {
+			dispbottom "Failed to attach instance.";
+			end;
+		}
+
+		instance_set_timeout(1800, 300); // 30 min instance, 5 min warning
+
+		instance_enter("palace_01");
+
+		// Save cooldown per player account
+		setvar(0, .@var_cooldown, .@now);
+
+		end;
+}
+
+// ---------------------------------------------------
+// 2. Auto-announcement script for Palace open times at 12 AM and 12 PM
+-	script	Palace_Ghost_Announcer	-1,{
+	OnInit:
+		addtimer(60000, strnpcinfo(0) + "::CheckTime");
+		end;
+
+	CheckTime:
+		while (1) {
+			.@hour = gettime(3);
+			.@minute = gettime(2);
+
+			if ((.@hour == 0 || .@hour == 12) && .@minute == 0) {
+				announce "The gates to the Palace of Ghost are now open for 10 minutes!", bc_all, 0x8A2BE2;
+			}
+			sleep 60000;
+		}
+		end;
+}
+
+// ---------------------------------------------------
+// 3. Palace of Ghost Instance Controller with boss and nightmare logic
+-	script	PalaceOfGhost	-1,{
+	OnInit:
+		.@boss_mob = npc_lookname2id("palace_boss");      // Replace with your boss mob name
+		.@nightmare_mob = npc_lookname2id("nightmare");   // Replace with nightmare mob name
+
+		.@boss = 0;
+		.@nightmare = 0;
+		.@has_grown = 0;
+		.@nightmare_spawned = 0;
+		.@charging = 0;
+
+		end;
+
+	OnInstanceEnter:
+		.@boss = mobspawn(.@boss_mob, "palace_01", 150, 150, 0, 1, 1);
+		end;
+
+	OnInstanceTick:
+		if (.@boss <= 0) {
+			end;
+		}
+
+		.@hp = mob_get_hp(.@boss);
+		.@max_hp = mob_get_max_hp(.@boss);
+		.@hp_percent = (.@hp * 100) / .@max_hp;
+
+		// Boss grows and buffs at 50% HP
+		if (.@hp_percent <= 50 && .@has_grown == 0) {
+			.@has_grown = 1;
+
+			mob_set_scale(.@boss, 2.0);
+
+			mob_set_max_hp(.@boss, .@max_hp * 150 / 100);
+			mob_set_hp(.@boss, mob_get_max_hp(.@boss));
+
+			mob_set_atk(.@boss, mob_get_atk(.@boss) * 150 / 100);
+			mob_set_def(.@boss, mob_get_def(.@boss) * 150 / 100);
+		}
+
+		// Nightmare spawn and charge logic at 30% HP
+		if (.@hp_percent <= 30 && .@nightmare_spawned == 0) {
+			.@nightmare_spawned = 1;
+
+			// Teleport boss first to the set safe location
+			.@safe_x = 140;  // Adjust coords as needed
+			.@safe_y = 140;
+			mob_teleport(.@boss, .@safe_x, .@safe_y);
+
+			// Calculate random spawn position around boss within radius 3
+			.@rand_offset_x = rand(7) - 3; // -3 to +3
+			.@rand_offset_y = rand(7) - 3; // -3 to +3
+
+			.@spawn_x = .@safe_x + .@rand_offset_x;
+			.@spawn_y = .@safe_y + .@rand_offset_y;
+
+			.@nightmare = mobspawn(.@nightmare_mob, "palace_01", .@spawn_x, .@spawn_y, 0, 1, 1);
+
+			mob_set_immortal(.@nightmare, 1);
+			mob_set_flag(.@nightmare, MF_NOTARGET);
+
+			.@charging = 1;
+
+			// Nightmare charges toward boss's current position after teleport
+			.@charge_target_x = .@safe_x;
+			.@charge_target_y = .@safe_y;
+
+			.@charge_damage = mob_get_atk(.@boss) / 2;
+
+			addtimer(500, strnpcinfo(0) + "::ChargeMove", .@nightmare, .@charge_target_x, .@charge_target_y, .@charge_damage, .@boss);
+		}
+
+		end;
+
+	// Charge move subroutine
+	subroutine	ChargeMove {
+		.@mob = getarg(0);
+		.@dest_x = getarg(1);
+		.@dest_y = getarg(2);
+		.@damage = getarg(3);
+		.@boss = getarg(4);
+
+		if (.@mob <= 0) {
+			end;
+		}
+
+		// Get current pos
+		.@x = mob_get_x(.@mob);
+		.@y = mob_get_y(.@mob);
+
+		// Calculate direction vector
+		.@dx = .@dest_x - .@x;
+		.@dy = .@dest_y - .@y;
+
+		// Distance to dest
+		.@dist = sqrt((.@dx * .@dx) + (.@dy * .@dy));
+		if (.@dist <= 1) {
+			// Reached destination
+			mob_destroy(.@mob);
+
+			// Boss stays at the safe cell (already teleported)
+
+			end;
+		}
+
+		// Normalize movement vector to speed (e.g., 5 units per tick)
+		.@speed = 5.0;
+		.@move_x = (.@dx / .@dist) * .@speed;
+		.@move_y = (.@dy / .@dist) * .@speed;
+
+		// Move nightmare mob
+		mob_teleport(.@mob, .@x + .@move_x, .@y + .@move_y);
+
+		// Damage all players in a small radius (3 cells) around nightmare's new position
+		.@players = getmapplayers("palace_01");
+		for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
+			.@pl = getarray(.@players, .@i);
+			if (.@pl <= 0) continue;
+
+			.@pl_x = getcharxy(.@pl, 0);
+			.@pl_y = getcharxy(.@pl, 1);
+
+			// Calculate distance
+			.@dist_to_pl = sqrt(pow((.@pl_x - (.@x + .@move_x)), 2) + pow((.@pl_y - (.@y + .@move_y)), 2));
+			if (.@dist_to_pl <= 3) {
+				// Deal damage equal to charge_damage (half boss atk)
+				damagetoplayer(.@pl, .@damage);
+			}
+		}
+
+		// Schedule next move tick in 500 ms
+		addtimer(500, strnpcinfo(0) + "::ChargeMove", .@mob, .@dest_x, .@dest_y, .@damage, .@boss);
+
+		return;
+	}
+
+	// Utility function to damage players directly
+	subroutine	damagetoplayer {
+		.@pl = getarg(0);
+		.@dmg = getarg(1);
+
+		// Direct damage ignoring defense
+		character_damage(.@pl, .@dmg);
+
+		return;
+	}
+}
