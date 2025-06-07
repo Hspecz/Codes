@@ -1,105 +1,198 @@
 // ---------------------------------------------------
 // 1. Palace of Ghost Entry NPC
-pog_waiting,160,150,5	script	Palace_of_Ghost_NPC	123,{
-	if (!getpartyid(0)) {
-		mes "You need to be in a party to enter the Palace of Ghost.";
-		close;
-	}
+pog_waiting,160,150,5	script	Cain's Follower	123,{
+	OnInit:
+		setnpcdefnpctypename("Cain's Follower");
+		end;
 
-	if (getcharid(0) != getpartyleader(getpartyid(0), 1)) {
-		mes "Only the party leader can start the Palace of Ghost event.";
-		close;
-	}
-
-	// Check if any party member already completed the event
-	.@party_size = getpartysize(getpartyid(0));
-	for (.@i = 0; .@i < .@party_size; .@i++) {
-		.@member = getpartyid(getpartyid(0), .@i);
-		if (.@member <= 0) continue;
-
-		.@aid = getcharid(3, .@member);
-		if (getvaraccount(.@aid, "pog_completed") == 1) {
-			mes "One or more party members have already completed the Palace of Ghost and cannot enter again until reset.";
+	OnTouch:
+		// Must be party leader
+		if (getpartyid(0) <= 0) {
+			mes "You need to be in a party to enter Palace of Ghost.";
 			close;
 		}
-	}
 
-	// Create instance for the party
-	.@party_id = getpartyid(0);
-	if (instance_create("PalaceOfGhost", .@party_id) < 0) {
-		mes "Failed to create the Palace of Ghost instance.";
+		if (getcharid(0) != getpartyleader(getpartyid(0), 1)) {
+			mes "Only the party leader can start the Palace of Ghost event.";
+			close;
+		}
+
+		// Check if any party member already completed event
+		for (set .@i, 0; .@i < getpartycount(getpartyid(0)); set .@i, .@i + 1) {
+			.@pl_id = getpartyid(getpartyid(0), .@i);
+			if (.@pl_id <= 0) continue;
+
+			.@aid = getcharid(3, .@pl_id);
+			if (getvaraccount(.@aid, "pog_completed") == 1) {
+				mes "One or more party members have already completed Palace of Ghost and cannot enter again.";
+				close;
+			}
+		}
+
+		// Cooldown check (3 days)
+		.@leader_aid = getcharid(3);
+		.@last_time = getvaraccount(.@leader_aid, "pog_cooldown");
+		.@now = gettimetick(2);
+
+		if (.@last_time > 0 && .@now - .@last_time < 259200) {
+			.@remaining = 259200 - (.@now - .@last_time);
+			.@hrs = .@remaining / 3600;
+			.@mins = (.@remaining % 3600) / 60;
+
+			mes "You must wait " + .@hrs + " hours and " + .@mins + " minutes before entering Palace of Ghost again.";
+			close;
+		}
+
+		mes "Are you sure you want to start the Palace of Ghost event? Your party will be warped to the instance.";
+		next;
+
+		mes "Good luck! Starting Palace of Ghost now.";
+		
+		// Create the instance for this party
+		if (instance_create("PalaceOfGhost", getpartyid(0)) < 0) {
+			mes "Failed to create the Palace of Ghost instance. Please try again later.";
+			close;
+		}
+
+		// Attach NPC to instance
+		if (!instance_attach("PalaceOfGhost")) {
+			mes "Failed to attach NPC to instance.";
+			close;
+		}
+
+		// Warp all party members to palace_01 instance
+		for (set .@i, 0; .@i < getpartycount(getpartyid(0)); set .@i, .@i + 1) {
+			.@pl_id = getpartyid(getpartyid(0), .@i);
+			if (.@pl_id <= 0) continue;
+			character_warp(.@pl_id, "palace_01", 150, 150);
+		}
+
+		// Set cooldown variable on leader's account
+		setvaraccount(.@leader_aid, "pog_cooldown", .@now);
+
 		close;
 	}
 
-	if (!instance_attach("PalaceOfGhost")) {
-		mes "Failed to attach instance.";
-		close;
-	}
 
-	instance_set_timeout(1800, 300); // 30 min instance, 5 min warning
-	instance_enter("palace_01");
-
-	mes "The Palace of Ghost instance has started. Good luck!";
-	close;
-}
-
-// ---------------------------------------------------
-// 2. PalaceOfGhost instance controller script
-
+// ---------------------------------------------
+// Palace of Ghost instance controller
 -	script	PalaceOfGhost	-1,{
 	OnInit:
-		.@boss_id = 15000;  // Cain's mob ID
+		.@boss_mob = 15000; // Cain boss ID
 		.@boss = 0;
-		.@enraged = 0;     // flag if enraged name change happened
+		.@enraged_name = "Enraged Cain";
+
+		// State variables
+		.@has_grown = 0;
+		.@reset_count = 0; 
+		.@max_resets = 3;
+
 		end;
 
 	OnInstanceEnter:
-		// Spawn Cain boss at coords (150,150) on palace_01 map in instance
-		.@boss = mobspawn(.@boss_id, "palace_01", 150, 150, 0, 1, 1);
+		// Spawn Cain boss in palace_01 at 150,150
+		.@boss = mobspawn(.@boss_mob, "palace_01", 150, 150, 0, 1, 1);
+		mob_set_hp(.@boss, mob_get_max_hp(.@boss));
+		mob_rename(.@boss, "Cain");
+		mob_set_scale(.@boss, 1.0);
+
 		end;
 
 	OnInstanceTick:
-		if (.@boss <= 0) {
+		if (.@boss <= 0) end;
+
+		// Get all players on map
+		.@players = getmapplayers("palace_01");
+		.@all_dead = 1;
+
+		for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
+			.@pl_id = getarray(.@players, .@i);
+			if (.@pl_id <= 0) continue;
+
+			if (getcharhp(.@pl_id) > 0) {
+				.@all_dead = 0;
+				break;
+			}
+		}
+
+		if (.@all_dead) {
+			if (.@reset_count < .@max_resets) {
+				.@reset_count += 1;
+
+				// Resurrect all players full HP/SP
+				for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
+					.@pl_id = getarray(.@players, .@i);
+					if (.@pl_id <= 0) continue;
+
+					character_damage(.@pl_id, -10000);
+					status_heal(.@pl_id, 3);
+				}
+
+				// Reset boss HP, name, scale
+				mob_set_hp(.@boss, mob_get_max_hp(.@boss));
+				mob_rename(.@boss, "Cain");
+				mob_set_scale(.@boss, 1.0);
+
+				// Reset boss state
+				.@has_grown = 0;
+
+				announce "The party was wiped! The Palace of Ghost has been reset (" + .@reset_count + "/" + .@max_resets + ").", bc_party, 0xFF4500;
+			} else {
+				announce "You failed Palace of Ghost after 3 resets. You will be warped out and your party disbanded.", bc_party, 0xFF0000;
+
+				// Warp all players out to Prontera 150 150
+				for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
+					.@pl_id = getarray(.@players, .@i);
+					if (.@pl_id <= 0) continue;
+
+					character_warp(.@pl_id, 1000, 150, 150);
+				}
+
+				// Disband party safely
+				party_leaveall(getpartyid(0));
+
+				// Destroy instance
+				instance_destroy();
+
+				end;
+			}
+		}
+
+		// Boss HP check for enraged form
+		.@hp = mob_get_hp(.@boss);
+		.@max_hp = mob_get_max_hp(.@boss);
+		.@hp_percent = (.@hp * 100) / .@max_hp;
+
+		if (.@hp_percent <= 50 && .@has_grown == 0) {
+			.@has_grown = 1;
+
+			mob_set_scale(.@boss, 2.0);
+			mob_set_max_hp(.@boss, .@max_hp * 150 / 100);
+			mob_set_hp(.@boss, mob_get_max_hp(.@boss));
+			mob_rename(.@boss, .@enraged_name);
+			announce "Cain has become enraged!", bc_party, 0xFF4500;
+		}
+
+		// Boss defeated
+		if (.@hp <= 0) {
+			// Give rewards and set pog_completed for all players on map
+			for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
+				.@pl_id = getarray(.@players, .@i);
+				if (.@pl_id <= 0) continue;
+
+				// Example reward: 10000 zeny
+				item_give(.@pl_id, 9000, 10000);
+
+				setvaraccount(getcharid(3, .@pl_id), "pog_completed", 1);
+			}
+
+			announce "Congratulations! You cleared Palace of Ghost.", bc_party, 0x32CD32;
+
+			instance_destroy();
+
 			end;
 		}
 
-		// Get current HP and max HP of boss
-		.@hp = mob_get_hp(.@boss);
-		.@max_hp = mob_get_max_hp(.@boss);
-
-		// Calculate hp percent
-		.@hp_percent = (.@hp * 100) / .@max_hp;
-
-		// When HP <= 50% and not enraged yet, rename mob to "Enraged Cain"
-		if (.@hp_percent <= 50 && .@enraged == 0) {
-			.@enraged = 1;
-			mob_name(.@boss, "Enraged Cain");
-		}
-
-		end;
-
-	// Called automatically when the boss is killed or instance ends
-	OnInstanceEnd:
-		// Reward all players currently in palace_01 instance
-		.@players = getmapplayers("palace_01");
-
-		for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
-			.@pl = getarray(.@players, .@i);
-			if (.@pl <= 0) continue;
-
-			// Reward example: 20000 exp + item 1234 qty 1 (replace with your rewards)
-			addexp(.@pl, 20000);
-			getitem(.@pl, 1234, 1);
-
-			// Set pog_completed permanent variable on player's account
-			.@aid = getcharid(3, .@pl);
-			setvaraccount(.@aid, "pog_completed", 1);
-		}
-
-		// Destroy instance map
-		instance_destroy("PalaceOfGhost");
-
-		mes_all "The Palace of Ghost instance has ended. Thanks for playing!";
-
 		end;
 }
+
