@@ -1,0 +1,322 @@
+// ---------------------------------------------------
+// Lost Isles - Event 2 Script (Instance-based with NPC Starter)
+// ---------------------------------------------------
+
+// NPC in town to start the event
+// Place this NPC in your main city (e.g., prontera)
+prontera,150,150,5	script	Lost Isles Officer	123,{  
+	mes "Greetings adventurer! Do you wish to challenge the Lost Isles?";
+	if (!getcharid(1)) {
+		mes "You must be in a party to start the event.";
+		close;
+	}
+	if (select("Yes, let's go!", "No thanks.") == 2) close;
+	donpcevent "LostIslesEvent::OnStart";
+	close;
+}
+
+// ---------------------------------------------------
+// Main Instance Controller
+// ---------------------------------------------------
+- script LostIslesEvent -1,{
+
+	// Variables for monsters and reset limits
+	OnInit:
+		set .boss1, 1001;   // Stage 1 boss
+		set .boss3, 1002;   // Final boss
+		set .mini_boss, 1003; // Mini boss
+		setarray .mobs[0], 1004, 1005; // Mobs for distraction
+
+		set .reset_limit, 3;
+		set .reset_count, 0;
+
+		set .current_stage, 0; // Track stage: 1,2,3
+		end;
+
+	OnStart:
+		.@party_id = getcharid(1);
+		if (.@party_id <= 0) {
+			dispbottom "You must be in a party to start the event.";
+			end;
+		}
+		if (instance_create("LostIsles", .@party_id) < 0) {
+			dispbottom "Failed to create instance.";
+			end;
+		}
+		if (!instance_attach("LostIsles")) {
+			dispbottom "Failed to attach instance.";
+			end;
+		}
+		instance_set_timeout(1800, 300); // 30 min instance, 5 min warning
+		instance_enter("lost_01");
+
+		set .reset_count, 0;
+		set .current_stage, 1;
+
+		donpcevent strnpcinfo(0) + "::OnStage1Start";
+		end;
+
+	// ====== Stage 1 ======
+	OnStage1Start:
+		mapannounce instance_mapname("lost_01"), "Stage 1: Defeat the boss!", bc_map;
+		monster instance_mapname("lost_01"), 100, 100, "Stage Boss", .boss1, 1, strnpcinfo(0)+"::OnStage1BossDead";
+
+		// Start periodic check for resets every 10 seconds
+		autoevent strnpcinfo(0) + "::PeriodicCheck", 10000;
+		end;
+
+	OnStage1BossDead:
+		callsub S_ReviveAll, "lost_01";
+		enablenpc instance_npcname("warp_lost01_lost02");
+		end;
+
+	// Warp NPC for stage 2 (enabled after stage 1 boss death)
+	warp_lost01_lost02,1,1,0	script	Warp Lost01->Lost02	100,{
+		donpcevent strnpcinfo(0) + "::OnStage2Warp";
+		close;
+	}
+
+	OnStage2Warp:
+		callsub S_WarpParty, "lost_02", 100, 100;
+		set .current_stage, 2;
+		donpcevent strnpcinfo(0)+"::OnStage2Start";
+		end;
+
+	// ====== Stage 2 ======
+	OnStage2Start:
+		mapannounce instance_mapname("lost_02"), "Stage 2: Defend against the attackers!", bc_map;
+
+		set .defense_fail, 0;
+		set .mob_count, 0;
+
+		// Start spawning attackers loop (non-blocking)
+		autoevent strnpcinfo(0)+"::OnSpawnAttackers", 500;
+		end;
+
+	OnSpawnAttackers:
+		if (.defense_fail) {
+			stopnpctimer;
+			end;
+		}
+		// spawn attacker mobs randomly around map
+		monster instance_mapname("lost_02"), rand(20,180), rand(20,180), "Attacker", 1005, 1, strnpcinfo(0)+"::OnAttackerReached";
+		autoevent strnpcinfo(0)+"::OnSpawnAttackers", 500;
+		end;
+
+	OnAttackerReached:
+		set .mob_count, .mob_count + 1;
+		if (.mob_count >= 100) {
+			mapannounce instance_mapname("lost_02"), "Too many monsters reached the NPC!", bc_map;
+			killmonsterall instance_mapname("lost_02");
+			areapercentheal instance_mapname("lost_02"), 0, 0, 300, 300, -100;
+			callsub S_WarpMapPlayers, instance_mapname("lost_02"), "lost_01", 100, 100;
+			set .defense_fail, 1;
+			end;
+		}
+		end;
+
+	// Defense success after 4 minutes (240000 ms)
+	OnTimer240000:
+		stopnpctimer;
+		if (!.defense_fail) {
+			mapannounce instance_mapname("lost_02"), "Defense succeeded! Moving to final stage.", bc_map;
+			callsub S_ReviveAll, "lost_02";
+			enablenpc instance_npcname("warp_lost02_lost03");
+		}
+		end;
+
+	// Warp NPC for stage 3 (enabled after defense success)
+	warp_lost02_lost03,1,1,0	script	Warp Lost02->Lost03	100,{
+		donpcevent strnpcinfo(0)+"::OnStage3Warp";
+		close;
+	}
+
+	OnStage3Warp:
+		callsub S_WarpParty, "lost_03", 100, 100;
+		set .current_stage, 3;
+		donpcevent strnpcinfo(0)+"::OnStage3Start";
+		end;
+
+	// ====== Stage 3 ======
+	OnStage3Start:
+		set .boss_hp_half, 0;
+		set .mini_dead, 0;
+		mapannounce instance_mapname("lost_03"), "Final Stage: Defeat the final boss!", bc_map;
+
+		monster instance_mapname("lost_03"), 100,100, "Final Boss", .boss3, 1, strnpcinfo(0)+"::OnFinalBossDead";
+		autoevent strnpcinfo(0)+"::OnBossHPCheck", 1000;
+		end;
+
+	OnBossHPCheck:
+		if (.boss_hp_half == 0 && getmobhp("Final Boss") <= getmobmaxhp("Final Boss") / 2) {
+			set .boss_hp_half, 1;
+			setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 0);
+			setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 0);
+			unitwarp getunitid("Final Boss"), instance_mapname("lost_03"), 150, 150;
+			getmapunits(0, instance_mapname("lost_03"));
+			for (.@i = 0; .@i < $@mapunitscount; .@i++) {
+				.@x = rand(130, 170);
+				.@y = rand(130, 170);
+				warpchar instance_mapname("lost_03"), .@x, .@y, $@mapunitsaid[.@i];
+			}
+			monster instance_mapname("lost_03"), 145,145, "Mini Boss", .mini_boss, 1, strnpcinfo(0)+"::OnMiniBossDead";
+			setunitdata(getunitid("Mini Boss"), UDT_CANMOVE, 0);
+			for (.@wave = 0; .@wave < 3; .@wave++) {
+				for (.@i = 0; .@i < 5; .@i++) {
+					monster instance_mapname("lost_03"), rand(120,180), rand(120,180), "Minion", .mobs[rand(2)], 1;
+				}
+				sleep 6000;
+			}
+			sleep 2000;
+			if (!.mini_dead) {
+				mapannounce instance_mapname("lost_03"), "You failed to kill the mini boss in time!", bc_map;
+				areapercentheal instance_mapname("lost_03"), 0, 0, 300, 300, -100;
+				callsub S_WarpMapPlayers, instance_mapname("lost_03"), "lost_01", 100, 100;
+			}
+		}
+		autoevent strnpcinfo(0)+"::OnBossHPCheck", 1000;
+		end;
+
+	OnMiniBossDead:
+		set .mini_dead, 1;
+		setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 1);
+		setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 1);
+		end;
+
+	OnFinalBossDead:
+		callsub S_ReviveAll, "lost_03";
+		mapannounce instance_mapname("lost_03"), "You have completed Lost Isles!", bc_map;
+		callsub S_GiveReward;
+
+		// Tag all party members with isle_completed
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+		for (.@i = 0; .@i < $@partymembercount; .@i++) {
+			set .member_id, $@partymemberaid[.@i];
+			setpv .member_id, "isle_completed", 1;
+		}
+
+		// End instance immediately
+		instance_end();
+		end;
+
+	// ====== Periodic Reset Check ======
+	PeriodicCheck:
+		// Call reset check function every 10 seconds
+		donpcevent strnpcinfo(0)+"::CheckAllDeadAndHandleReset";
+		autoevent strnpcinfo(0) + "::PeriodicCheck", 10000;
+		end;
+
+	// Check if all party members are dead and handle resets
+	CheckAllDeadAndHandleReset:
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+
+		// Count dead party members
+		.@dead_count = 0;
+		for (.@i = 0; .@i < $@partymembercount; .@i++) {
+			if (getcharisdead($@partymemberaid[.@i])) {
+				set .@dead_count, .@dead_count + 1;
+			}
+		}
+
+		// If all dead
+		if (.@dead_count == $@partymembercount) {
+			if (.reset_count < .reset_limit) {
+				// Inform party members
+				for (.@i = 0; .@i < $@partymembercount; .@i++) {
+					scriptmessage $@partymemberaid[.@i], "All party members are dead. You have " + (.reset_limit - .reset_count) + " resets left.";
+				}
+
+				// Revive all party members
+				for (.@i = 0; .@i < $@partymembercount; .@i++) {
+					unitrevive $@partymemberaid[.@i], 100, 100;
+				}
+
+				// Restart current stage boss fight
+				donpcevent strnpcinfo(0) + "::RestartCurrentStage";
+
+				// Increase reset count
+				set .reset_count, .reset_count + 1;
+
+			} else {
+				// No resets left: warp out and disband party
+				for (.@i = 0; .@i < $@partymembercount; .@i++) {
+					warp $@partymemberaid[.@i], "prontera", 150, 150;
+				}
+				disbandparty .@party_id;
+				// End the instance safely
+				instance_end();
+			}
+		}
+		end;
+
+	// Restart current stage boss fight based on stage
+	RestartCurrentStage:
+		if (.current_stage == 1) {
+			mapannounce instance_mapname("lost_01"), "The boss has been resurrected. Prepare to fight again!", bc_map;
+			killmonsterall instance_mapname("lost_01");
+			monster instance_mapname("lost_01"), 100, 100, "Stage Boss", .boss1, 1, strnpcinfo(0) + "::OnStage1BossDead";
+		}
+		else if (.current_stage == 2) {
+			mapannounce instance_mapname("lost_02"), "The attackers have been reset. Prepare to defend again!", bc_map;
+			killmonsterall instance_mapname("lost_02");
+			set .defense_fail, 0;
+			set .mob_count, 0;
+			autoevent strnpcinfo(0)+"::OnSpawnAttackers", 500;
+		}
+		else if (.current_stage == 3) {
+			mapannounce instance_mapname("lost_03"), "The final boss has been resurrected. Prepare to fight again!", bc_map;
+			killmonsterall instance_mapname("lost_03");
+			set .boss_hp_half, 0;
+			set .mini_dead, 0;
+			monster instance_mapname("lost_03"), 100, 100, "Final Boss", .boss3, 1, strnpcinfo(0)+"::OnFinalBossDead";
+			autoevent strnpcinfo(0)+"::OnBossHPCheck", 1000;
+		}
+		end;
+
+	// ================= Utility Subroutines =================
+
+	function	S_WarpParty {
+		.@map$ = getarg(0);
+		.@x = getarg(1);
+		.@y = getarg(2);
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+		for (.@i = 0; .@i < $@partymembercount; .@i++)
+			warpchar .@map$, .@x, .@y, $@partymemberaid[.@i];
+		return;
+	}
+
+	function	S_WarpMapPlayers {
+		.@from_map$ = getarg(0);
+		.@to_map$ = getarg(1);
+		.@x = getarg(2);
+		.@y = getarg(3);
+		getmapunits(0, .@from_map$);
+		for (.@i = 0; .@i < $@mapunitscount; .@i++)
+			warpchar .@to_map$, .@x, .@y, $@mapunitsaid[.@i];
+		return;
+	}
+
+	function	S_ReviveAll {
+		.@map$ = getarg(0);
+		getmapunits(0, .@map$);
+		for (.@i = 0; .@i < $@mapunitscount; .@i++) {
+			unitrevive $@mapunitsaid[.@i], 100, 100;
+		}
+		return;
+	}
+
+	function	S_GiveReward {
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+		for (.@i = 0; .@i < $@partymembercount; .@i++)
+			getitem 501, 5, $@partymemberaid[.@i];
+		return;
+	}
+}
