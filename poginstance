@@ -1,0 +1,105 @@
+// ---------------------------------------------------
+// 1. Palace of Ghost Entry NPC
+pog_waiting,160,150,5	script	Palace_of_Ghost_NPC	123,{
+	if (!getpartyid(0)) {
+		mes "You need to be in a party to enter the Palace of Ghost.";
+		close;
+	}
+
+	if (getcharid(0) != getpartyleader(getpartyid(0), 1)) {
+		mes "Only the party leader can start the Palace of Ghost event.";
+		close;
+	}
+
+	// Check if any party member already completed the event
+	.@party_size = getpartysize(getpartyid(0));
+	for (.@i = 0; .@i < .@party_size; .@i++) {
+		.@member = getpartyid(getpartyid(0), .@i);
+		if (.@member <= 0) continue;
+
+		.@aid = getcharid(3, .@member);
+		if (getvaraccount(.@aid, "pog_completed") == 1) {
+			mes "One or more party members have already completed the Palace of Ghost and cannot enter again until reset.";
+			close;
+		}
+	}
+
+	// Create instance for the party
+	.@party_id = getpartyid(0);
+	if (instance_create("PalaceOfGhost", .@party_id) < 0) {
+		mes "Failed to create the Palace of Ghost instance.";
+		close;
+	}
+
+	if (!instance_attach("PalaceOfGhost")) {
+		mes "Failed to attach instance.";
+		close;
+	}
+
+	instance_set_timeout(1800, 300); // 30 min instance, 5 min warning
+	instance_enter("palace_01");
+
+	mes "The Palace of Ghost instance has started. Good luck!";
+	close;
+}
+
+// ---------------------------------------------------
+// 2. PalaceOfGhost instance controller script
+
+-	script	PalaceOfGhost	-1,{
+	OnInit:
+		.@boss_id = 15000;  // Cain's mob ID
+		.@boss = 0;
+		.@enraged = 0;     // flag if enraged name change happened
+		end;
+
+	OnInstanceEnter:
+		// Spawn Cain boss at coords (150,150) on palace_01 map in instance
+		.@boss = mobspawn(.@boss_id, "palace_01", 150, 150, 0, 1, 1);
+		end;
+
+	OnInstanceTick:
+		if (.@boss <= 0) {
+			end;
+		}
+
+		// Get current HP and max HP of boss
+		.@hp = mob_get_hp(.@boss);
+		.@max_hp = mob_get_max_hp(.@boss);
+
+		// Calculate hp percent
+		.@hp_percent = (.@hp * 100) / .@max_hp;
+
+		// When HP <= 50% and not enraged yet, rename mob to "Enraged Cain"
+		if (.@hp_percent <= 50 && .@enraged == 0) {
+			.@enraged = 1;
+			mob_name(.@boss, "Enraged Cain");
+		}
+
+		end;
+
+	// Called automatically when the boss is killed or instance ends
+	OnInstanceEnd:
+		// Reward all players currently in palace_01 instance
+		.@players = getmapplayers("palace_01");
+
+		for (set .@i, 0; .@i < getarraysize(.@players); set .@i, .@i + 1) {
+			.@pl = getarray(.@players, .@i);
+			if (.@pl <= 0) continue;
+
+			// Reward example: 20000 exp + item 1234 qty 1 (replace with your rewards)
+			addexp(.@pl, 20000);
+			getitem(.@pl, 1234, 1);
+
+			// Set pog_completed permanent variable on player's account
+			.@aid = getcharid(3, .@pl);
+			setvaraccount(.@aid, "pog_completed", 1);
+		}
+
+		// Destroy instance map
+		instance_destroy("PalaceOfGhost");
+
+		mes_all "The Palace of Ghost instance has ended. Thanks for playing!";
+
+		end;
+}
