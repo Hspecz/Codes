@@ -1,0 +1,152 @@
+// event_queue_system.txt
+
+// NPC: Event Queue System for Palace of Ghost and Lost Isle
+// Place this NPC in a main town (e.g., prontera)
+// Fully handles: queueing, leaving, party creation, instancing
+
+prontera,150,150,5 script Event Queue 757,{
+
+    // Constants
+    set .MaxPartySize, 6;
+    set .MinLevel, 255;
+    set .AFKLimit, 300; // 5 minutes
+
+    // Queue arrays (initialize only once)
+    OnInit:
+        setarray .pog_queue[0], 0,0,0,0,0,0;
+        setarray .pog_queue_time[0], 0,0,0,0,0,0;
+        setarray .isle_queue[0], 0,0,0,0,0,0;
+        setarray .isle_queue_time[0], 0,0,0,0,0,0;
+        end;
+
+    function add_to_queue {
+        .@q_ref$ = getarg(0);
+        .@q_time$ = getarg(1);
+        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+            if (getd("."+.@q_ref$+"["+.@i+"]") == 0) {
+                setd("."+.@q_ref$+"["+.@i+"]", getcharid(3));
+                setd("."+.@q_time$+"["+.@i+"]", gettimetick(2));
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    function remove_from_queue {
+        .@q_ref$ = getarg(0);
+        .@q_time$ = getarg(1);
+        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+            if (getd("."+.@q_ref$+"["+.@i+"]") == getcharid(3)) {
+                setd("."+.@q_ref$+"["+.@i+"]", 0);
+                setd("."+.@q_time$+"["+.@i+"]", 0);
+                return;
+            }
+        }
+    }
+
+    function queue_is_full {
+        .@q_ref$ = getarg(0);
+        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+            if (getd("."+.@q_ref$+"["+.@i+"]") == 0)
+                return 0;
+        }
+        return 1;
+    }
+
+    function start_event {
+        .@event$ = getarg(0);
+        .@q_ref$ = getarg(1);
+        .@q_time$ = getarg(2);
+        .@map$ = getarg(3);
+        .@var$ = getarg(4);
+        .@waiting_map$ = getarg(5);
+
+        // Pick leader randomly
+        .@leader = 0;
+        while (.@leader == 0) {
+            .@r = rand(.MaxPartySize);
+            .@leader = getd("."+.@q_ref$+"["+.@r+"]");
+        }
+
+        // Create party
+        partycreate .@leader;
+        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+            .@aid = getd("."+.@q_ref$+"["+.@i+"]");
+            if (.@aid > 0 && .@aid != .@leader) {
+                partyaddmember .@aid, .@leader;
+            }
+        }
+
+        // Create instance
+        .@instance$ = .@event$ + "_" + gettimetick(2);
+        .@ins = instance_create(.@instance$, .@leader);
+        instance_setmap(.@ins, .@map$, 0);
+
+        // Warp all to waiting map, then enter instance
+        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+            .@aid = getd("."+.@q_ref$+"["+.@i+"]");
+            if (.@aid > 0 && isloggedin(.@aid)) {
+                attachrid(.@aid);
+                warp .@waiting_map$, 0, 0;
+                sleep2 500;
+                instance_enter .@ins;
+                setd(""+.@var$+"", 1);
+            }
+            setd("."+.@q_ref$+"["+.@i+"]", 0);
+            setd("."+.@q_time$+"["+.@i+"]", 0);
+        }
+        return;
+    }
+
+    mes "Choose an option:";
+    next;
+    switch(select("Join Palace of Ghost:Join Lost Isle:Leave Queue:View Queues:Exit")) {
+        case 1:
+            if (BaseLevel < .MinLevel || getpartyid() > 0 || pog_completed == 1) {
+                mes "You are not eligible."; close;
+            }
+            if (add_to_queue("pog_queue", "pog_queue_time")) {
+                mes "Joined Palace of Ghost queue.";
+                if (queue_is_full("pog_queue")) {
+                    start_event("PoG", "pog_queue", "pog_queue_time", "po_01", "pog_completed", "pog_waiting");
+                }
+            } else {
+                mes "Queue is full or you're already in.";
+            }
+            close;
+
+        case 2:
+            if (BaseLevel < .MinLevel || getpartyid() > 0 || isle_completed == 1) {
+                mes "You are not eligible."; close;
+            }
+            if (add_to_queue("isle_queue", "isle_queue_time")) {
+                mes "Joined Lost Isle queue.";
+                if (queue_is_full("isle_queue")) {
+                    start_event("Isle", "isle_queue", "isle_queue_time", "lisland01", "isle_completed", "isle_waiting");
+                }
+            } else {
+                mes "Queue is full or you're already in.";
+            }
+            close;
+
+        case 3:
+            remove_from_queue("pog_queue", "pog_queue_time");
+            remove_from_queue("isle_queue", "isle_queue_time");
+            mes "Left all queues.";
+            close;
+
+        case 4:
+            mes "Palace Queue:";
+            for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+                if (.pog_queue[.@i]) mes "- " + rid2name(.pog_queue[.@i]);
+            }
+            mes "Lost Isle Queue:";
+            for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+                if (.isle_queue[.@i]) mes "- " + rid2name(.isle_queue[.@i]);
+            }
+            close;
+
+        default:
+            close;
+    }
+}
