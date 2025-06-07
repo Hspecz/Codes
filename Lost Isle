@@ -1,0 +1,133 @@
+// ---------------------------------------------------
+// Lost Isles - Event 2 Script (Refined)
+// ---------------------------------------------------
+
+- script LostIslesEvent -1,{
+
+	OnInit:
+		// Monster IDs (replace with actual mob IDs from your database)
+		set .boss1, 1001;       // Stage 1 boss
+		set .boss3, 1002;       // Final boss
+		set .mini_boss, 1003;   // Mini boss
+		setarray .mobs[0], 1004, 1005; // Minions for distraction
+		end;
+
+	OnStart:
+		mapannounce "map_01", "Stage 1: Defeat the boss!", bc_map;
+		monster "map_01", 100, 100, "Stage Boss", .boss1, 1, strnpcinfo(0) + "::OnStage1BossDead";
+		end;
+
+	OnStage1BossDead:
+		enablenpc "warp_map01_map02";
+		end;
+
+	OnStage2Warp:
+		callsub S_WarpParty, "map_02", 100, 100;
+		end;
+
+	OnStage2Start:
+		mapannounce "map_02", "Stage 2: Defend the NPC for 4 minutes!", bc_map;
+		initnpctimer;
+		set .mob_count, 0;
+		set .defense_fail, 0;
+
+		for (.@i = 0; .@i < 100; .@i++) {
+			monster "map_02", rand(20,180), rand(20,180), "Attacker", 1005, 1, strnpcinfo(0) + "::OnAttackerReached";
+			sleep 500;
+		}
+		end;
+
+	OnAttackerReached:
+		set .mob_count, .mob_count + 1;
+		if (.mob_count >= 100) {
+			mapannounce "map_02", "Too many monsters reached the NPC!", bc_map;
+			killmonsterall "map_02";
+			areapercentheal "map_02", 0, 0, 300, 300, -100;
+			callsub S_WarpMapPlayers, "map_02", "map_01", 100, 100;
+			set .defense_fail, 1;
+		}
+		end;
+
+	OnTimer240000:
+		stopnpctimer;
+		if (!.defense_fail) {
+			mapannounce "map_02", "Defense succeeded! Moving to final stage.", bc_map;
+			enablenpc "warp_map02_map03";
+		}
+		end;
+
+	OnStage3Warp:
+		callsub S_WarpParty, "map_03", 100, 100;
+		end;
+
+	OnStage3Start:
+		set .boss_hp_half, 0;
+		set .mini_dead, 0;
+		monster "map_03", 100, 100, "Final Boss", .boss3, 1, strnpcinfo(0) + "::OnFinalBossDead";
+		end;
+
+	OnBossHPCheck:
+		if (!.boss_hp_half && getmobhp("Final Boss") <= getmobmaxhp("Final Boss") / 2) {
+			set .boss_hp_half, 1;
+			setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 0);
+			setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 0);
+
+			monster "map_03", 120, 120, "Mini Boss", .mini_boss, 1, strnpcinfo(0) + "::OnMiniBossDead";
+
+			for (.@i = 0; .@i < 5; .@i++) {
+				monster "map_03", rand(50,150), rand(50,150), "Minion", .mobs[rand(2)], 1;
+			}
+
+			sleep 20000;
+			if (!.mini_dead) {
+				mapannounce "map_03", "You failed to kill the mini boss in time!", bc_map;
+				areapercentheal "map_03", 0, 0, 300, 300, -100;
+				callsub S_WarpMapPlayers, "map_03", "map_01", 100, 100;
+			}
+		}
+		end;
+
+	OnMiniBossDead:
+		set .mini_dead, 1;
+		setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 1);
+		setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 1);
+		end;
+
+	OnFinalBossDead:
+		mapannounce "map_03", "You have completed Lost Isles!", bc_map;
+		callsub S_GiveReward;
+		end;
+
+// ---------------------------------------------------
+// Utility Subroutines
+// ---------------------------------------------------
+
+	S_WarpParty:
+		.@map$ = getarg(0);
+		.@x = getarg(1);
+		.@y = getarg(2);
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+		for (.@i = 0; .@i < $@partymembercount; .@i++)
+			warpchar .@map$, .@x, .@y, $@partymemberaid[.@i];
+		return;
+
+	S_WarpMapPlayers:
+		.@from$ = getarg(0);
+		.@to$ = getarg(1);
+		.@x = getarg(2);
+		.@y = getarg(3);
+		getmapunits(0, .@from$);
+		for (.@i = 0; .@i < $@mapunitscount; .@i++)
+			warpchar .@to$, .@x, .@y, $@mapunitsaid[.@i];
+		return;
+
+	S_GiveReward:
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+		for (.@i = 0; .@i < $@partymembercount; .@i++)
+			getitem 501, 5, $@partymemberaid[.@i]; // Example reward
+		return;
+}
