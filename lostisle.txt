@@ -1,7 +1,23 @@
 // ---------------------------------------------------
-// Lost Isles - Event 2 Script (Instance-based)
+// Lost Isles - Event 2 Script (Instance-based with NPC Starter)
 // ---------------------------------------------------
 
+// NPC in town to start the event
+// Place this NPC in your main city (e.g., prontera)
+prontera,150,150,5	script	Lost Isles Officer	123,{  
+	mes "Greetings adventurer! Do you wish to challenge the Lost Isles?";
+	if (!getcharid(1)) {
+		mes "You must be in a party to start the event.";
+		close;
+	}
+	if (select("Yes, let's go!", "No thanks.") == 2) close;
+	donpcevent "LostIslesEvent::OnStart";
+	close;
+}
+
+// ---------------------------------------------------
+// Main Instance Controller
+// ---------------------------------------------------
 - script LostIslesEvent -1,{
 
 	OnInit:
@@ -13,13 +29,11 @@
 		end;
 
 	OnStart:
-		// Create an instance for the party
 		.@party_id = getcharid(1);
 		if (.@party_id <= 0) {
 			dispbottom "You must be in a party to start the event.";
 			end;
 		}
-		
 		if (instance_create("LostIsles", .@party_id) < 0) {
 			dispbottom "Failed to create instance.";
 			end;
@@ -28,7 +42,6 @@
 			dispbottom "Failed to attach instance.";
 			end;
 		}
-		
 		instance_set_timeout(1800, 300); // 30 min instance, 5 min warning
 		instance_enter("lost_01");
 		donpcevent strnpcinfo(0) + "::OnStage1Start";
@@ -40,6 +53,7 @@
 		end;
 
 	OnStage1BossDead:
+		callsub S_ReviveAll, "lost_01";
 		enablenpc instance_npcname("warp_lost01_lost02");
 		end;
 
@@ -52,10 +66,8 @@
 		initnpctimer;
 		set .@count, 0;
 		set .defense_fail, 0;
-
 	repeat:
 		if (.@count >= 100 || .defense_fail) end;
-
 		monster instance_mapname("lost_02"), rand(20,180), rand(20,180), "Attacker", 1005, 1, strnpcinfo(0)+"::OnAttackerReached";
 		set .@count, .@count + 1;
 		sleep 500;
@@ -77,6 +89,7 @@
 		stopnpctimer;
 		if (!.defense_fail) {
 			mapannounce instance_mapname("lost_02"), "Defense succeeded! Moving to final stage.", bc_map;
+			callsub S_ReviveAll, "lost_02";
 			enablenpc instance_npcname("warp_lost02_lost03");
 		}
 		end;
@@ -90,6 +103,7 @@
 		set .boss_hp_half, 0;
 		set .mini_dead, 0;
 		monster instance_mapname("lost_03"), 100,100, "Final Boss", .boss3, 1, strnpcinfo(0)+"::OnFinalBossDead";
+		autoevent strnpcinfo(0)+"::OnBossHPCheck", 1000;
 		end;
 
 	OnBossHPCheck:
@@ -97,16 +111,29 @@
 			set .boss_hp_half, 1;
 			setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 0);
 			setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 0);
-			monster instance_mapname("lost_03"), 120,120, "Mini Boss", .mini_boss, 1, strnpcinfo(0)+"::OnMiniBossDead";
-			for (.@i = 0; .@i < 5; .@i++)
-				monster instance_mapname("lost_03"), rand(50,150), rand(50,150), "Minion", .mobs[rand(2)], 1;
-			sleep 20000;
+			unitwarp getunitid("Final Boss"), instance_mapname("lost_03"), 150, 150;
+			getmapunits(0, instance_mapname("lost_03"));
+			for (.@i = 0; .@i < $@mapunitscount; .@i++) {
+				.@x = rand(130, 170);
+				.@y = rand(130, 170);
+				warpchar instance_mapname("lost_03"), .@x, .@y, $@mapunitsaid[.@i];
+			}
+			monster instance_mapname("lost_03"), 145,145, "Mini Boss", .mini_boss, 1, strnpcinfo(0)+"::OnMiniBossDead";
+			setunitdata(getunitid("Mini Boss"), UDT_CANMOVE, 0);
+			for (.@wave = 0; .@wave < 3; .@wave++) {
+				for (.@i = 0; .@i < 5; .@i++) {
+					monster instance_mapname("lost_03"), rand(120,180), rand(120,180), "Minion", .mobs[rand(2)], 1;
+				}
+				sleep 6000;
+			}
+			sleep 2000;
 			if (!.mini_dead) {
 				mapannounce instance_mapname("lost_03"), "You failed to kill the mini boss in time!", bc_map;
 				areapercentheal instance_mapname("lost_03"), 0, 0, 300, 300, -100;
 				callsub S_WarpMapPlayers, instance_mapname("lost_03"), "lost_01", 100, 100;
 			}
 		}
+		autoevent strnpcinfo(0)+"::OnBossHPCheck", 1000;
 		end;
 
 	OnMiniBossDead:
@@ -116,6 +143,7 @@
 		end;
 
 	OnFinalBossDead:
+		callsub S_ReviveAll, "lost_03";
 		mapannounce instance_mapname("lost_03"), "You have completed Lost Isles!", bc_map;
 		callsub S_GiveReward;
 		end;
@@ -141,6 +169,15 @@
 		getmapunits(0, .@from_map$);
 		for (.@i = 0; .@i < $@mapunitscount; .@i++)
 			warpchar .@to_map$, .@x, .@y, $@mapunitsaid[.@i];
+		return;
+	}
+
+	function	S_ReviveAll {
+		.@map$ = getarg(0);
+		getmapunits(0, .@map$);
+		for (.@i = 0; .@i < $@mapunitscount; .@i++) {
+			unitrevive $@mapunitsaid[.@i], 100, 100;
+		}
 		return;
 	}
 
