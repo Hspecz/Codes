@@ -1,0 +1,157 @@
+// =============================================================
+//  NPC: Cain's Follower (Entrance)
+// =============================================================
+pog_waiting,160,150,5	script	Cain's Follower	123,{
+
+	// 1. SUNDAY CHECK (0 = Sunday)
+	if (gettime(DT_DAYOFWEEK) != 0) {
+		mes "The Palace of Ghost only appears on Sundays.";
+		close;
+	}
+
+	// 2. COOLDOWN CHECK (Account Variable)
+	// This only exists if they successfully KILLED the boss previously.
+	if (#pog_cooldown > gettimetick(2)) {
+		.@seconds_left = #pog_cooldown - gettimetick(2);
+		.@hours = .@seconds_left / 3600;
+		.@minutes = (.@seconds_left % 3600) / 60;
+		mes "You have already conquered the palace.";
+		mes "You must wait " + .@hours + " hours and " + .@minutes + " minutes.";
+		close;
+	}
+
+	// 3. PARTY CHECKS
+	if (getcharid(1) == 0) {
+		mes "You need to be in a party to enter.";
+		close;
+	}
+	if (!ispartyleader()) {
+		mes "Only the party leader can start the event.";
+		close;
+	}
+
+	// 4. ONE-WAY RESTRICTION (The "No Comeback" Rule)
+	// We check if this party ALREADY has an instance active.
+	// If they do, we DENY entry. This stops dead players from returning.
+	if (instance_id(getcharid(1)) >= 0) {
+		mes "The gates are sealed.";
+		mes "You cannot rejoin an ongoing attempt.";
+		close;
+	}
+
+	mes "WARNING: This is a one-way trip.";
+	mes "If you die, you cannot return.";
+	mes "If your party wipes, the instance closes immediately.";
+	next;
+	
+	if (select("We are ready.", "Maybe later.") == 2) close;
+
+	// 5. INSTANCE CREATION
+	.@instance_id = instance_create("PalaceOfGhost", getcharid(1));
+	
+	if (.@instance_id < 0) {
+		mes "Failed to create instance.";
+		close;
+	}
+	
+	if (!instance_attach(.@instance_id)) {
+		mes "Failed to attach instance.";
+		close;
+	}
+
+	// Set the "No Teleport" flag immediately
+	setmapflag instance_mapname("palace_01"), mf_noteleport;
+	// Optional: Block Butterfly Wings too so they can't escape easily?
+	// setmapflag instance_mapname("palace_01"), mf_nowarp; 
+
+	// Warp the party in!
+	if (instance_enter("palace_01") != 0) {
+		mes "An error occurred while warping.";
+		close;
+	}
+	
+	donpcevent "PalaceOfGhost::OnStart";
+	close;
+}
+
+// =============================================================
+//  INSTANCE CONTROLLER: PalaceOfGhost
+// =============================================================
+-	script	PalaceOfGhost	-1,{
+
+	OnInit:
+		set .boss_mob, 15000;   // Cain boss ID
+		end;
+
+	OnStart:
+		// Initialize mechanics
+		set 'enraged, 0;
+
+		// Spawn Boss
+		monster instance_mapname("palace_01"), 150, 150, "Cain", .boss_mob, 1, strnpcinfo(0)+"::OnBossDead";
+		
+		// Start Monitor Loop
+		initnpctimer;
+		end;
+
+	OnTimer1000:
+		// Stop timer if boss is gone
+		if (!mobcount(instance_mapname("palace_01"), "Cain")) {
+			stopnpctimer;
+			end;
+		}
+
+		// Enrage Mechanic (50% HP)
+		if ('enraged == 0 && getmobhp("Cain") <= getmobmaxhp("Cain") / 2) {
+			set 'enraged, 1;
+			mapannounce instance_mapname("palace_01"), "Cain has become enraged!", bc_map, 0xFF4500;
+			unitheal getunitid("Cain"), getmobmaxhp("Cain")/2, 0; 
+			sc_start SC_INC_AGI, 60000, 10, getunitid("Cain"); 
+		}
+		
+		initnpctimer;
+		end;
+
+	OnBossDead:
+		stopnpctimer;
+		mapannounce instance_mapname("palace_01"), "Victory! The Palace is yours.", bc_map, 0x32CD32;
+
+		// DISTRIBUTE REWARDS & SET COOLDOWN
+		// Only players ALIVE and ON THE MAP get the credit.
+		getmapunits(0, instance_mapname("palace_01")); 
+		
+		for (.@i = 0; .@i < $@mapunitscount; .@i++) {
+			.@aid = $@mapunitsaid[.@i];
+			
+			// 1. Give Reward
+			getitem 512, 5, .@aid; 
+			
+			// 2. APPLY COOLDOWN (Success Only)
+			// This is the ONLY place this variable is set.
+			setd("#pog_cooldown", gettimetick(2) + 21600, .@aid);
+		}
+
+		// Kick everyone out after 60s
+		instance_destroy(60000);
+		end;
+
+	// =========================================================
+	//  HARDCORE WIPE LOGIC
+	// =========================================================
+	OnPCDieEvent:
+		// Verify player is in THIS instance
+		if (strcharinfo(3) == instance_mapname("palace_01")) {
+			
+			// Check Living Players (Type 2)
+			// If this hits 0, it means the last person just died.
+			if (instance_info(instance_id(), 2) == 0) {
+				mapannounce instance_mapname("palace_01"), "The party has fallen...", bc_map, 0xFF0000;
+				
+				// IMMEDIATE DESTRUCTION
+				// We do NOT set the cooldown variable here.
+				// They can try again immediately.
+				instance_destroy();
+			}
+		}
+		end;
+}
