@@ -266,3 +266,55 @@ prontera,150,150,5	script	Event Queue	757,{
 		attachrid(getcharid(3));
 		return;
 }
+
+// =============================================================
+//  GM COMMANDS: Event Manual Control
+// =============================================================
+-	script	Event_Admin_Cmd	-1,{
+	OnInit:
+		bindatcmd "startpalace", strnpcinfo(0)+"::OnStartPOG", 99, 100;
+		bindatcmd "stoppalace", strnpcinfo(0)+"::OnStopPOG", 99, 100;
+		
+		bindatcmd "startisle", strnpcinfo(0)+"::OnStartIsle", 99, 100;
+		bindatcmd "stopisle", strnpcinfo(0)+"::OnStopIsle", 99, 100;
+
+		bindatcmd "startmorse", strnpcinfo(0)+"::OnStartMorse", 99, 100;
+		bindatcmd "stopmorse", strnpcinfo(0)+"::OnStopMorse", 99, 100;
+		end;
+
+	// --- Palace of Ghost ---
+	OnStartPOG:
+		set $POG_ForceOpen, 1;
+		dispbottom "Admin: Palace of Ghost is now MANUALLY OPEN.";
+		announce "The gates to the Palace of Ghost have been forced open!", bc_blue|bc_all;
+		end;
+	OnStopPOG:
+		set $POG_ForceOpen, 0;
+		dispbottom "Admin: Palace manual override DISABLED.";
+		announce "The Palace of Ghost gates are closing...", bc_blue|bc_all;
+		end;
+
+	// --- Lost Isles ---
+	OnStartIsle:
+		set $Isle_ForceOpen, 1;
+		dispbottom "Admin: Lost Isles is now MANUALLY OPEN.";
+		announce "The route to the Lost Isles has been revealed!", bc_blue|bc_all;
+		end;
+	OnStopIsle:
+		set $Isle_ForceOpen, 0;
+		dispbottom "Admin: Lost Isles manual override DISABLED.";
+		announce "The route to the Lost Isles is fading...", bc_blue|bc_all;
+		end;
+
+	// --- Morse Cave ---
+	OnStartMorse:
+		set $Morse_ForceOpen, 1;
+		dispbottom "Admin: Morse Cave is now MANUALLY OPEN.";
+		announce "The dimensional rift to Morse Cave has opened!", bc_blue|bc_all;
+		end;
+	OnStopMorse:
+		set $Morse_ForceOpen, 0;
+		dispbottom "Admin: Morse Cave manual override DISABLED.";
+		announce "The rift to Morse Cave is closing...", bc_blue|bc_all;
+		end;
+}
