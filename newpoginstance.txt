@@ -1,5 +1,5 @@
 // =============================================================
-//  NPC: Cain's Follower (Entrance)
+//  Riggo Palace of Ghost Instance
 // =============================================================
 void_island,15,25,5	script	Cain's Follower	123,{
 
