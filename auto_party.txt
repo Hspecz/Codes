@@ -1,5 +1,5 @@
 // =============================================================
-//  NPC: Event Queue System (Prontera)
+//  Riggo Event Queue System (Prontera)
 // =============================================================
 prontera,150,150,5	script	Event Queue	757,{
 
