@@ -8,7 +8,7 @@ prontera,150,150,5	script	Event Queue	757,{
 	// Check Days
 	.@is_sunday   = (gettime(DT_DAYOFWEEK) == 0 || $POG_ForceOpen == 1);
 	.@is_saturday = (gettime(DT_DAYOFWEEK) == 6 || $Isle_ForceOpen == 1);
-	.@is_monthu   = (gettime(DT_DAYOFWEEK) == 1 || gettime(DT_DAYOFWEEK) == 4); // Mon(1) or Thu(4)
+	.@is_monthu   = (gettime(DT_DAYOFWEEK) == 1 || gettime(DT_DAYOFWEEK) == 4 || $Morse_ForceOpen == 1);
 
 	// 2. FAST TRACK CHECK (Manual Full Party of 8)
 	if (getpartyid() > 0 && ispartyleader() && getpartycount(getpartyid()) == 8) {
