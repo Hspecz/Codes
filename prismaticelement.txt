@@ -1,6 +1,6 @@
 //======================
 // 
-// Adding Custim Element - Prismatic
+// Adding Custom Element - Prismatic (Riggo)
 // 
 //======================
 This modification introduces a new Element ID ELE_PRISMATIC.
