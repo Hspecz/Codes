@@ -1,6 +1,6 @@
 //=====================
 // 
-// Adding custom race Transcendence
+// Adding Custom Race - Transcendence (Riggo)
 // 
 //=====================
 rAthena Source Mod: New Race "Transcendence"
