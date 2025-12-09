@@ -1,5 +1,5 @@
 //==============================
-// No Dispell Item Bonus Procedure
+// Riggo No Dispell Item Bonus Procedure
 //==============================
 // Instructions
 // Apply the changes below to your src/ files.
