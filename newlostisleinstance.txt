@@ -1,7 +1,7 @@
 // =============================================================
 //  NPC: Lost Isles Officer (Entrance)
 // =============================================================
-isle_waiting,150,150,5	script	Lost Isles Officer	123,{
+void_island,30,50,5	script	Lost Isles Officer	123,{
 	
 	// 1. SATURDAY CHECK (0=Sun, 6=Sat)
 	// We also check if it is before 01:00 AM to enforce the time limit.
