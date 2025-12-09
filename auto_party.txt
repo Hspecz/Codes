@@ -5,38 +5,49 @@ prontera,150,150,5	script	Event Queue	757,{
 
 	// 1. DYNAMIC MENU CONFIG
 	.@menu$ = "";
-	.@is_sunday = (gettime(DT_DAYOFWEEK) == 0);
+	// Check Days
+	.@is_sunday   = (gettime(DT_DAYOFWEEK) == 0);
 	.@is_saturday = (gettime(DT_DAYOFWEEK) == 6);
+	.@is_monthu   = (gettime(DT_DAYOFWEEK) == 1 || gettime(DT_DAYOFWEEK) == 4); // Mon(1) or Thu(4)
 
 	// 2. FAST TRACK CHECK (Manual Full Party of 8)
-	// Updated: Strictly checks for 8 members now
 	if (getpartyid() > 0 && ispartyleader() && getpartycount(getpartyid()) == 8) {
-		if (.@is_sunday || .@is_saturday) {
-			mes "You have a full party of 8 ready for battle.";
-			mes "Fast travel to the entrance?";
-			next;
-			switch(select("Warp to Palace Entrance:Warp to Lost Isle Entrance:No, use Queue")) {
-				case 1:
-					// Warp to Palace Entrance (Void Island 15, 25)
-					callsub L_GroupWarp, "void_island", 15, 25;
-					close;
-				case 2:
-					// Warp to Lost Isle Entrance (Void Island 30, 50)
-					callsub L_GroupWarp, "void_island", 30, 50;
-					close;
-				case 3:
-					break;
-			}
+		mes "You have a full party of 8 ready for battle.";
+		mes "Fast travel to an entrance?";
+		next;
+		// Build Fast Track Menu based on active days
+		.@ft_menu$ = "";
+		if (.@is_sunday) .@ft_menu$ = .@ft_menu$ + "Warp to Palace of Ghost:";
+		if (.@is_saturday) .@ft_menu$ = .@ft_menu$ + "Warp to Lost Isle:";
+		if (.@is_monthu) .@ft_menu$ = .@ft_menu$ + "Warp to Morse Cave:";
+		.@ft_menu$ = .@ft_menu$ + "No, use Queue";
+		
+		.@ft_select = select(.@ft_menu$);
+		
+		// Map selection to logic (Sequential check)
+		if (.@is_sunday) {
+			if (.@ft_select == 1) { callsub L_GroupWarp, "void_island", 15, 25; close; }
+			set .@ft_select, .@ft_select - 1;
 		}
+		if (.@is_saturday) {
+			if (.@ft_select == 1) { callsub L_GroupWarp, "void_island", 30, 50; close; }
+			set .@ft_select, .@ft_select - 1;
+		}
+		if (.@is_monthu) {
+			if (.@ft_select == 1) { callsub L_GroupWarp, "moro_cav", 61, 69; close; }
+			set .@ft_select, .@ft_select - 1;
+		}
+		// If they chose "No", fall through to main menu
 	}
 
 	// 3. STANDARD QUEUE MENU
 	if (.@is_sunday) .@menu$ = .@menu$ + "Join Palace of Ghost:";
 	if (.@is_saturday) .@menu$ = .@menu$ + "Join Lost Isle:";
+	if (.@is_monthu) .@menu$ = .@menu$ + "Join Morse Cave:";
 	.@menu$ = .@menu$ + "Leave Queue:View Queues:Exit";
 
 	mes "Current Event Status:";
-	if (!.@is_sunday && !.@is_saturday)
+	if (!.@is_sunday && !.@is_saturday && !.@is_monthu)
 		mes "^777777No events are active today.^000000";
 	else
 		mes "^0000FFRegistration is OPEN.^000000";
@@ -44,12 +55,17 @@ prontera,150,150,5	script	Event Queue	757,{
 
 	.@select = select(.@menu$);
 
+	// Map selection to logic
 	if (.@is_sunday) {
 		if (.@select == 1) callsub OnJoinPalace;
 		else set .@select, .@select - 1;
 	}
 	if (.@is_saturday) {
 		if (.@select == 1) callsub OnJoinIsle;
+		else set .@select, .@select - 1;
+	}
+	if (.@is_monthu) {
+		if (.@select == 1) callsub OnJoinMorse;
 		else set .@select, .@select - 1;
 	}
 
@@ -66,13 +82,10 @@ prontera,150,150,5	script	Event Queue	757,{
 			close;
 		}
 		callsub L_AddQueue, "pog_queue", "pog_queue_time";
-		
 		if ($@add_result) {
 			mes "Joined Palace of Ghost queue.";
 			callsub L_CheckFull, "pog_queue";
-			if ($@queue_full) {
-				callsub L_StartEvent, "PalaceOfGhost", "pog_queue", "pog_queue_time", "void_island", 15, 25;
-			}
+			if ($@queue_full) callsub L_StartEvent, "PalaceOfGhost", "pog_queue", "pog_queue_time", "void_island", 15, 25;
 		} else {
 			mes "Queue is full or you are already queued.";
 		}
@@ -84,13 +97,26 @@ prontera,150,150,5	script	Event Queue	757,{
 			close;
 		}
 		callsub L_AddQueue, "isle_queue", "isle_queue_time";
-		
 		if ($@add_result) {
 			mes "Joined Lost Isle queue.";
 			callsub L_CheckFull, "isle_queue";
-			if ($@queue_full) {
-				callsub L_StartEvent, "LostIsles", "isle_queue", "isle_queue_time", "void_island", 30, 50;
-			}
+			if ($@queue_full) callsub L_StartEvent, "LostIsles", "isle_queue", "isle_queue_time", "void_island", 30, 50;
+		} else {
+			mes "Queue is full or you are already queued.";
+		}
+		close;
+
+	OnJoinMorse:
+		// Requirement: Level 160+ (from your instance script)
+		if (BaseLevel < 160 || getpartyid() > 0 || #Morse_Cooldown > gettimetick(2)) {
+			mes "You are not eligible (Need Lvl 160, No Party, or Cooldown Active)."; 
+			close;
+		}
+		callsub L_AddQueue, "morse_queue", "morse_queue_time";
+		if ($@add_result) {
+			mes "Joined Morse Cave queue.";
+			callsub L_CheckFull, "morse_queue";
+			if ($@queue_full) callsub L_StartEvent, "Morse's Cave", "morse_queue", "morse_queue_time", "moro_cav", 61, 69;
 		} else {
 			mes "Queue is full or you are already queued.";
 		}
@@ -99,6 +125,7 @@ prontera,150,150,5	script	Event Queue	757,{
 	OnLeaveQueue:
 		callsub L_RemoveQueue, "pog_queue", "pog_queue_time";
 		callsub L_RemoveQueue, "isle_queue", "isle_queue_time";
+		callsub L_RemoveQueue, "morse_queue", "morse_queue_time";
 		mes "Removed from all queues.";
 		close;
 
@@ -111,18 +138,28 @@ prontera,150,150,5	script	Event Queue	757,{
 		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
 			if (.isle_queue[.@i]) mes "- " + rid2name(.isle_queue[.@i]);
 		}
+		mes "Morse Queue:";
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (.morse_queue[.@i]) mes "- " + rid2name(.morse_queue[.@i]);
+		}
 		close;
 
 	// =========================================================
 	//  UTILITIES
 	// =========================================================
 	OnInit:
-		set .MaxPartySize, 8; // UPDATED: Auto Party Limit is now 8
-		set .MinLevel, 255;
-		setarray .pog_queue[0], 0,0,0,0,0,0,0,0; // 8 zeros
+		set .MaxPartySize, 8; 
+		set .MinLevel, 255; // Default min level for Palace/Isle
+		
+		// Initialize Arrays
+		setarray .pog_queue[0], 0,0,0,0,0,0,0,0;
 		setarray .pog_queue_time[0], 0,0,0,0,0,0,0,0;
+		
 		setarray .isle_queue[0], 0,0,0,0,0,0,0,0;
 		setarray .isle_queue_time[0], 0,0,0,0,0,0,0,0;
+		
+		setarray .morse_queue[0], 0,0,0,0,0,0,0,0;
+		setarray .morse_queue_time[0], 0,0,0,0,0,0,0,0;
 		end;
 
 	L_AddQueue:
@@ -201,7 +238,7 @@ prontera,150,150,5	script	Event Queue	757,{
 		if (.@instance_id < 0) return;
 		instance_attach(.@instance_id);
 
-		// 5. WARP TO VOID ISLAND
+		// 5. WARP TO ENTRANCE (Void Island OR Moro_Cav)
 		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
 			.@aid = getd("."+.@q$+"["+.@i+"]");
 			if (.@aid > 0) {
@@ -228,59 +265,4 @@ prontera,150,150,5	script	Event Queue	757,{
 		}
 		attachrid(getcharid(3));
 		return;
-}
-
-// =============================================================
-//  MAP CONTROL: Void Island Restrictions
-// =============================================================
-
-// 1. MAPFLAGS
-// 'loadevent' triggers OnPCLoadMapEvent when they arrive.
-void_island	mapflag	nosave	SavePoint
-void_island	mapflag	noteleport
-void_island	mapflag	nowarp
-void_island	mapflag	loadevent
-
-// 2. ENFORCEMENT SCRIPT
--	script	VoidEnforcer	-1,{
-
-	// A. ARRIVAL CHECK (Warp-in & Login)
-	// This label runs immediately when a player loads the map
-	OnPCLoginEvent:
-	OnPCLoadMapEvent:
-		if (strcharinfo(3) != "void_island") end;
-
-		// 1. Must have a party
-		if (getcharid(1) == 0) {
-			warp "prontera", 150, 150;
-			dispbottom "You must be in a party to be here.";
-			end;
-		}
-
-		// 2. STRICT PARTY COUNT CHECK
-		// getpartycount returns total members (Online + Offline)
-		.@count = getpartycount(getcharid(1));
-
-		if (.@count < 8) {
-			warp "prontera", 150, 150;
-			dispbottom "Requirement Not Met: Your party is lacking members (Need 8).";
-			end;
-		}
-
-		if (.@count > 8) {
-			warp "prontera", 150, 150;
-			dispbottom "Requirement Not Met: Your party is over the limit (Max 8).";
-			end;
-		}
-		
-		// If count is exactly 8, they stay.
-		end;
-
-	// B. PARTY LEAVE CHECK
-	OnPartyLeave:
-		if (strcharinfo(3) == "void_island") {
-			warp "prontera", 150, 150;
-			dispbottom "You cannot remain on Void Island without a party.";
-		}
-		end;
 }
