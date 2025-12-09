@@ -1,0 +1,277 @@
+// =============================================================
+//  NPC: Lost Isles Officer (Entrance)
+// =============================================================
+isle_waiting,150,150,5	script	Lost Isles Officer	123,{
+	
+	// 1. SATURDAY CHECK (0=Sun, 6=Sat)
+	// We also check if it is before 01:00 AM to enforce the time limit.
+	if (gettime(DT_DAYOFWEEK) != 6) {
+		mes "The Lost Isles only appear on Saturdays.";
+		close;
+	}
+	
+	if (gettime(DT_HOUR) >= 1) { 
+		mes "The event has ended for today (Ends at 1:00 AM).";
+		mes "Come back next Saturday.";
+		close;
+	}
+
+	// 2. COOLDOWN CHECK (Account Variable: #Isle_Victory_CD)
+	if (#Isle_Victory_CD > gettimetick(2)) {
+		.@hours_left = (#Isle_Victory_CD - gettimetick(2)) / 3600;
+		mes "You have already claimed victory here.";
+		mes "You can return in " + .@hours_left + " hours.";
+		close;
+	}
+
+	if (!getcharid(1)) {
+		mes "You must be in a party to start the event.";
+		close;
+	}
+
+	// 3. SESSION LOCK CHECK (Character Variable: Isle_Session_Lock)
+	// This prevents re-entry if they are currently inside.
+	if (Isle_Session_Lock == 1) {
+		mes "You are already marked as 'In Progress'.";
+		mes "If your party wiped, please wait a moment for the instance to reset.";
+		close;
+	}
+
+	mes "Are you ready to challenge the Isles?";
+	if (select("Yes, let's go!", "No thanks.") == 2) close;
+	
+	// Set the Lock
+	set Isle_Session_Lock, 1;
+	
+	// Trigger the Instance Creator
+	donpcevent "LostIslesEvent::OnStart";
+	close;
+}
+
+// =============================================================
+//  INSTANCE CONTROLLER: LostIslesEvent
+// =============================================================
+-	script	LostIslesEvent	-1,{
+
+	OnInit:
+		// Configuration: Mob IDs
+		set .boss1, 1001; 
+		set .boss3, 1002;
+		set .mini_boss, 1003;
+		setarray .mobs[0], 1004, 1005;
+		end;
+
+	OnStart:
+		.@party_id = getcharid(1);
+		if (.@party_id <= 0) end;
+
+		// Create Instance
+		.@instance_id = instance_create("LostIsles", .@party_id);
+		if (.@instance_id < 0) {
+			mes "Failed to create instance.";
+			set Isle_Session_Lock, 0; // Unlock if creation failed
+			end;
+		}
+		
+		if (!instance_attach(.@instance_id)) {
+			set Isle_Session_Lock, 0;
+			end;
+		}
+
+		// Set Duration: 1 Hour (3600s) hard limit
+		instance_set_timeout(3600, 300, .@instance_id);
+		instance_enter("lost_01");
+
+		donpcevent strnpcinfo(0) + "::OnStage1Start";
+		end;
+
+	// --- STAGE 1 ---
+	OnStage1Start:
+		mapannounce instance_mapname("lost_01"), "Stage 1: Defeat the boss!", bc_map;
+		monster instance_mapname("lost_01"), 100,100, "Stage Boss", .boss1, 1, strnpcinfo(0)+"::OnStage1BossDead";
+		end;
+
+	OnStage1BossDead:
+		callsub S_ReviveAll, "lost_01";
+		enablenpc instance_npcname("warp_lost01_lost02");
+		end;
+
+	OnStage2Warp:
+		callsub S_WarpParty, "lost_02", 100, 100;
+		donpcevent strnpcinfo(0)+"::OnStage2Start";
+		end;
+
+	// --- STAGE 2 ---
+	OnStage2Start:
+		initnpctimer;
+		set .@count, 0;
+		set .defense_fail, 0;
+	repeat:
+		// Stop spawning if we hit the limit or failed
+		if (.@count >= 100 || .defense_fail) end;
+		monster instance_mapname("lost_02"), rand(20,180), rand(20,180), "Attacker", 1005, 1, strnpcinfo(0)+"::OnAttackerReached";
+		set .@count, .@count + 1;
+		sleep 500;
+		goto repeat;
+
+	OnAttackerReached:
+		set .mob_count, .mob_count + 1;
+		if (.mob_count >= 100) {
+			mapannounce instance_mapname("lost_02"), "Defense Failed!", bc_map;
+			set .defense_fail, 1;
+			// Failed defense = Wipe/Kick
+			instance_destroy(); 
+			end;
+		}
+		end;
+
+	OnTimer240000: // 4 Minutes
+		stopnpctimer;
+		if (!.defense_fail) {
+			mapannounce instance_mapname("lost_02"), "Defense succeeded!", bc_map;
+			callsub S_ReviveAll, "lost_02";
+			enablenpc instance_npcname("warp_lost02_lost03");
+		}
+		end;
+
+	OnStage3Warp:
+		callsub S_WarpParty, "lost_03", 100, 100;
+		donpcevent strnpcinfo(0)+"::OnStage3Start";
+		end;
+
+	// --- STAGE 3 ---
+	OnStage3Start:
+		set .boss_hp_half, 0;
+		set .mini_dead, 0;
+		monster instance_mapname("lost_03"), 100,100, "Final Boss", .boss3, 1, strnpcinfo(0)+"::OnFinalBossDead";
+		// Start the HP check loop
+		addtimer 1000, strnpcinfo(0)+"::OnBossHPCheck";
+		end;
+
+	OnBossHPCheck:
+		if (!mobcount(instance_mapname("lost_03"), "all")) end;
+
+		if (.boss_hp_half == 0 && getmobhp("Final Boss") <= getmobmaxhp("Final Boss") / 2) {
+			set .boss_hp_half, 1;
+			setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 0);
+			setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 0);
+			unitwarp getunitid("Final Boss"), instance_mapname("lost_03"), 150, 150;
+			
+			// Scatter Players
+			getmapunits(0, instance_mapname("lost_03"));
+			for (.@i = 0; .@i < $@mapunitscount; .@i++) {
+				if (getunitdata($@mapunitsaid[.@i], UDT_TYPE) == 0) // Players only
+					warpchar instance_mapname("lost_03"), rand(130,170), rand(130,170), $@mapunitsaid[.@i];
+			}
+
+			monster instance_mapname("lost_03"), 145,145, "Mini Boss", .mini_boss, 1, strnpcinfo(0)+"::OnMiniBossDead";
+			
+			// Minion Waves (Simplified loop)
+			for (.@w=0; .@w<3; .@w++) {
+				monster instance_mapname("lost_03"), rand(120,180), rand(120,180), "Minion", .mobs[rand(2)], 5;
+				sleep 6000;
+			}
+			sleep 2000;
+			
+			if (!.mini_dead) {
+				mapannounce instance_mapname("lost_03"), "Failed to kill Mini Boss!", bc_map;
+				instance_destroy(); // Fail/Wipe
+			}
+		}
+		if (mobcount(instance_mapname("lost_03"), "Final Boss"))
+			addtimer 1000, strnpcinfo(0)+"::OnBossHPCheck";
+		end;
+
+	OnMiniBossDead:
+		set .mini_dead, 1;
+		setunitdata(getunitid("Final Boss"), UDT_CANMOVE, 1);
+		setunitdata(getunitid("Final Boss"), UDT_TARGETABLE, 1);
+		end;
+
+	OnFinalBossDead:
+		callsub S_ReviveAll, instance_mapname("lost_03");
+		mapannounce instance_mapname("lost_03"), "Victory! You have conquered the Lost Isles!", bc_map;
+		
+		// MARK AS SUCCESS
+		set .instance_cleared, 1;
+
+		// REWARD & COOLDOWN LOOP
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1;
+		getpartymember .@party_id, 2;
+
+		for (.@i = 0; .@i < $@partymembercount; .@i++) {
+			.@aid = $@partymemberaid[.@i];
+			// 1. Give Reward
+			getitem 501, 5, .@aid; 
+			// 2. Set 12-Hour Account Cooldown (43200 seconds)
+			setd("#Isle_Victory_CD", gettimetick(2) + 43200, .@aid);
+		}
+
+		instance_destroy();
+		end;
+
+	// =========================================================
+	//  CRITICAL LOGIC: Wipe Check & Instance Destruction
+	// =========================================================
+
+	OnPCDieEvent:
+		// Triggers whenever a player dies on the server.
+		// We filter to only check if they are on OUR instance maps.
+		.@map$ = strcharinfo(3);
+		if (.@map$ == instance_mapname("lost_01") || 
+			.@map$ == instance_mapname("lost_02") || 
+			.@map$ == instance_mapname("lost_03")) {
+			
+			// Check active players in this instance (Type 2 = Living Players)
+			if (instance_info(instance_id(), 2) == 0) {
+				mapannounce .@map$, "The party has been wiped out!", bc_map;
+				instance_destroy();
+			}
+		}
+		end;
+	
+	OnClock0100:
+		// Saturday 1AM Force Kick
+		// If it is Saturday (6), and 1:00 AM arrives, kill the instance.
+		if (gettime(DT_DAYOFWEEK) == 6) {
+			mapannounce instance_mapname("lost_01"), "The event time has ended!", bc_map;
+			instance_destroy();
+		}
+		end;
+
+	OnInstanceDestroy:
+		// This runs when the instance ends (Success, Fail, or Wipe)
+		
+		// Get the Party ID attached to this instance
+		.@party_id = instance_info(instance_id(), 9);
+		
+		if (.@party_id) {
+			getpartymember .@party_id, 1;
+			getpartymember .@party_id, 2;
+			for (.@i = 0; .@i < $@partymembercount; .@i++) {
+				// ALWAYS reset the "Session Lock" so they can enter again.
+				// (The Cooldown variable #Isle_Victory_CD will block winners).
+				setd("Isle_Session_Lock", 0, $@partymemberaid[.@i]);
+			}
+		}
+		end;
+
+	// Utility Subroutines
+	function	S_WarpParty	{
+		.@map$ = getarg(0); .@x = getarg(1); .@y = getarg(2);
+		.@party_id = getcharid(1);
+		getpartymember .@party_id, 1; getpartymember .@party_id, 2;
+		for (.@i = 0; .@i < $@partymembercount; .@i++)
+			warpchar instance_mapname(.@map$), .@x, .@y, $@partymemberaid[.@i];
+		return;
+	}
+
+	function	S_ReviveAll	{
+		.@map$ = getarg(0);
+		getmapunits(0, instance_mapname(.@map$));
+		for (.@i = 0; .@i < $@mapunitscount; .@i++)
+			unitrevive $@mapunitsaid[.@i], 100, 100;
+		return;
+	}
+}
