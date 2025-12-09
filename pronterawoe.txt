@@ -1,0 +1,205 @@
+//============================================================
+// Riggo Mini WoE: Prontera War
+//============================================================
+
+// ---------------- CONTROLLER NPC ----------------
+-	script	MiniWoE_Controller	-1,{
+
+OnInit:
+    // --- GM COMMAND BINDING ---
+    // Binds @pronterawoe to this NPC's "OnCommand" label. Level 99 required.
+    bindatcmd "pronterawoe", strnpcinfo(3)+"::OnCommand", 99, 99;
+
+    // ---------------- CONFIGURATION ----------------
+    // Prize Arrays (ID, Qty)
+    setarray .Prize1_ID[0],  607, 608, 609;   setarray .Prize1_Qty[0], 20, 30, 10;
+    setarray .Prize2_ID[0],  12208, 12210;    setarray .Prize2_Qty[0], 2, 3;
+    setarray .Prize3_ID[0],  671, 673;        setarray .Prize3_Qty[0], 5, 10;
+    setarray .Prize4_ID[0],  12024, 12202;    setarray .Prize4_Qty[0], 5, 5;
+    setarray .Prize5_ID[0],  13517, 13529;    setarray .Prize5_Qty[0], 1, 1;
+
+    .EventDuration = 3600000; // 1 Hour
+    end;
+
+// ---------------- GM COMMAND LOGIC ----------------
+OnCommand:
+    if (.Active) {
+        dispbottom "[Mini WoE]: Event is currently ACTIVE. Force stopping...";
+        callsub OnEndEvent;
+    } else {
+        dispbottom "[Mini WoE]: Event is INACTIVE. Starting now...";
+        callsub OnStartEvent;
+    }
+    end;
+
+// ---------------- TIME TRIGGERS ----------------
+OnClock0800:
+OnClock2000:
+    callsub OnStartEvent;
+    end;
+
+// ---------------- MAIN LOGIC ----------------
+OnStartEvent:
+    if (.Active) end;
+    .Active = 1;
+    
+    announce "[Mini WoE]: The Battle for Prontera has begun!", bc_all|bc_blue;
+
+    // 1. Map Flags
+    setmapflag "prontera", mf_pvp;
+    setmapflag "prontera", mf_gvg;
+    setmapflag "prontera", mf_nomineeffect;
+    setmapflag "prontera", mf_loadevent; // Triggers OnPCLoadMapEvent
+
+    // 2. Hide NPCs (Loop to hide normal shopkeepers etc)
+    getmapunits "prontera", BL_NPC, .@NpcIDs;
+    for (.@i = 0; .@i < getarraysize(.@NpcIDs); .@i++) {
+        // Do not hide the Conqueror Flag!
+        if (strnpcinfo(2, .@NpcIDs[.@i]) != "Prontera Conqueror") {
+            disablenpc .@NpcIDs[.@i];
+        }
+    }
+
+    // 3. THE PURGE: Kick existing Guildless players
+    getmapunits "prontera", BL_PC, .@MapPlayers;
+    for (.@i = 0; .@i < getarraysize(.@MapPlayers); .@i++) {
+        if (attachrid(.@MapPlayers[.@i])) {
+            if (getcharid(2) == 0) {
+                message strcharinfo(0), "Guildless players aren't allowed in Prontera for the time being.";
+                warp "morocc", 0, 0;
+            }
+            detachrid();
+        }
+    }
+
+    // 4. Spawn Emperium & Start Timer
+    callsub Sub_SpawnEmp;
+    initnpctimer;
+    end;
+
+// ---------------- MAP ENTRY EVENT ----------------
+OnPCLoadMapEvent:
+    if (!.Active) end;
+    if (strcharinfo(3) != "prontera") end;
+
+    if (getcharid(2) == 0) {
+        sleep2 100; 
+        message strcharinfo(0), "Guildless players aren't allowed in Prontera for the time being.";
+        warp "morocc", 0, 0;
+    }
+    end;
+
+// ---------------- SUB: SPAWN EMPERIUM ----------------
+Sub_SpawnEmp:
+    monster "prontera", 150, 150, "Emperium", 1288, 1, strnpcinfo(3)+"::OnEmpDead";
+    return;
+
+// ---------------- TIMER EVENT (END) ----------------
+OnTimer3600000:
+    announce "[Mini WoE]: Time is up! The war is over.", bc_all|bc_blue;
+    callsub OnEndEvent;
+    end;
+
+// ---------------- BREAKER LOGIC ----------------
+OnEmpDead:
+    if (attachrid(killerrid)) {
+        .@WinnerGID = getcharid(2);
+        
+        // Security: Guildless Check
+        if (.@WinnerGID == 0) {
+            warp "morocc", 0, 0; 
+            callsub Sub_SpawnEmp; 
+            end;
+        }
+
+        .WinnerName$ = strcharinfo(0);
+        .GuildName$ = getguildname(.@WinnerGID);
+        
+        announce "[Mini WoE]: Emperium captured by " + .WinnerName$ + " [" + .GuildName$ + "]!", bc_all|bc_yellow;
+
+        // --- UPDATE THE FLAG ---
+        $MiniWoE_GID = .@WinnerGID;
+        doevent "Prontera Conqueror::OnUpdate"; 
+        // -----------------------
+
+        // Rewards
+        .@idx = rand(getarraysize(.Prize1_ID)); getitem .Prize1_ID[.@idx], .Prize1_Qty[.@idx];
+        .@idx = rand(getarraysize(.Prize2_ID)); getitem .Prize2_ID[.@idx], .Prize2_Qty[.@idx];
+        .@idx = rand(getarraysize(.Prize3_ID)); getitem .Prize3_ID[.@idx], .Prize3_Qty[.@idx];
+        .@idx = rand(getarraysize(.Prize4_ID)); getitem .Prize4_ID[.@idx], .Prize4_Qty[.@idx];
+        .@idx = rand(getarraysize(.Prize5_ID)); getitem .Prize5_ID[.@idx], .Prize5_Qty[.@idx];
+
+        // Warp Logic
+        getmapunits "prontera", BL_PC, .@MapPlayers;
+        for (.@i = 0; .@i < getarraysize(.@MapPlayers); .@i++) {
+            if (attachrid(.@MapPlayers[.@i])) {
+                .@CurrentGID = getcharid(2);
+                
+                if (.@CurrentGID == 0) {
+                    warp "morocc", 0, 0;
+                }
+                else if (.@CurrentGID != .@WinnerGID) {
+                    warp "prontera", 0, 0;
+                    dispbottom "The Emperium has shifted! You have been relocated.";
+                }
+                else {
+                    specialeffect 168; 
+                    dispbottom "Victory! Your guild holds the ground.";
+                }
+            }
+        }
+        detachrid();
+    }
+
+    sleep 1000;
+    if (.Active) callsub Sub_SpawnEmp;
+    end;
+
+// ---------------- CLEANUP ----------------
+OnEndEvent:
+    stopnpctimer;
+    .Active = 0;
+
+    killmonster "prontera", strnpcinfo(3)+"::OnEmpDead";
+
+    // Re-enable NPCs
+    getmapunits "prontera", BL_NPC, .@NpcIDs;
+    for (.@i = 0; .@i < getarraysize(.@NpcIDs); .@i++) {
+        // Do not touch the Flag NPC
+        if (strnpcinfo(2, .@NpcIDs[.@i]) != "Prontera Conqueror") {
+            enablenpc .@NpcIDs[.@i];
+        }
+    }
+
+    removemapflag "prontera", mf_pvp;
+    removemapflag "prontera", mf_gvg;
+    removemapflag "prontera", mf_nomineeffect;
+    removemapflag "prontera", mf_loadevent; 
+
+    announce "[Mini WoE]: Prontera has returned to peace.", bc_all|bc_blue;
+    end;
+}
+
+// ---------------- THE FLAG NPC ----------------
+// 722 = Guild Flag Sprite
+prontera,100,100,4	script	Prontera Conqueror	722,{
+
+    mes "[Prontera Conqueror]";
+    if ($MiniWoE_GID) {
+        mes "This territory is currently held by:";
+        mes "^0055FF" + getguildname($MiniWoE_GID) + "^000000";
+    } else {
+        mes "This territory is currently neutral.";
+    }
+    close;
+
+OnUpdate:
+    flagemblem $MiniWoE_GID;
+    end;
+
+OnInit:
+    if ($MiniWoE_GID) {
+        flagemblem $MiniWoE_GID;
+    }
+    end;
+}
