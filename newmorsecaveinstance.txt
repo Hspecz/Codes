@@ -1,5 +1,5 @@
 // =============================================================
-//  NPC: Morse Cave Entrance
+//  Riggo Morse Cave Customized Instance
 // =============================================================
 moro_cav,61,69,3	script	Senior Tracker#a1	4_M_JOB_ASSASSIN,{
 	
