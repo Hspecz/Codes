@@ -1,7 +1,7 @@
 // =============================================================
 //  NPC: Cain's Follower (Entrance)
 // =============================================================
-pog_waiting,160,150,5	script	Cain's Follower	123,{
+void_island,15,25,5	script	Cain's Follower	123,{
 
 	// 1. SUNDAY CHECK (0 = Sunday)
 	if (gettime(DT_DAYOFWEEK) != 0) {
