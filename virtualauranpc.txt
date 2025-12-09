@@ -96,7 +96,7 @@ Run your compilation command (e.g., make clean && make server or Rebuild Solutio
 NPC for the Virtual Aura
 
 //============================================================
-//  rAthena Script: Virtual Aura Mixer (Smooth Browsing)
+//  Riggo Virtual Aura NPC
 //============================================================
 //  Usage:
 //  1. Config the .PartX_IDs arrays with your 15 EFFECT IDs.
