@@ -1,0 +1,176 @@
+This procedure replaces the slow, script-based timer loop with native C++ logic that fires every time an active player sends data to the server, stopping the counter if the player is AFK for more than 30 seconds.
+
+Server Modification Guide: High-Performance Online Timer
+Phase 1: Defining the Variable (src/map/map.h)
+You must first declare a new integer variable inside the player's session structure (struct map_session_data) to hold their active time progress.
+
+File: src/map/map.h
+
+Action: Open src/map/map.h. Find the structure definition for struct map_session_data and insert the following line within the curly braces {}.
+
+C++
+
+// --- Content of src/map/map.h ---
+
+struct map_session_data {
+	struct block_list bl;
+	struct status_data base_status, battle_status;
+	// ... (Existing variables)
+
+	// [START CUSTOM ONLINE TIMER VARIABLE]
+	int active_time_counter;           // Tracks seconds earned since last point
+	// [END CUSTOM ONLINE TIMER VARIABLE]
+
+	int hp, mhp;
+	// ... (Other variables continue)
+};
+Phase 2: Implementing the Logic (src/map/pc.cpp)
+This is the critical step. We insert the AFK check and reward logic into the function that processes all player activity, ensuring it only runs when the player is authenticated and active.
+
+File: src/map/pc.cpp
+
+Action: Open src/map/pc.cpp. Find the function definition for int pc_process_packet(struct map_session_data *sd). Inside this function, look for the following code block (usually near the start):
+
+Find (Reference Code):
+
+C++
+
+// --- Content of src/map/pc.cpp ---
+
+int pc_process_packet(struct map_session_data *sd)
+{
+	int fd = sd->fd;
+
+	if (fd < 0 || !sd) return 0;
+	
+	// >>> PASTE NEW CODE BLOCK IMMEDIATELY AFTER THIS LINE <<<
+	
+	switch (RFIFOW(fd, 0)) {
+// ... (The rest of the packet handling function)
+Insert the following entire block of code immediately after the line if (fd < 0 || !sd) return 0;:
+
+C++
+
+// --- CODE BLOCK TO INSERT INTO src/map/pc.cpp ---
+
+	// --- [START CUSTOM ONLINE TIMER LOGIC] ---
+	
+	// Configuration Constants
+	const int ONLINE_REWARD_TIME = 3600000; // 1 hour (3600 seconds) per point
+	const int IDLE_THRESHOLD = 30000;    // 30 seconds (30000 ms) AFK Check
+	
+	// 1. Only award time if the player is authenticated AND not AFK
+	if (sd->state.auth && sd->idletime < IDLE_THRESHOLD) {
+		
+		// 2. Add 1 second of credit
+		// This ensures credit is added gradually during active play.
+		sd->active_time_counter += 1; 
+
+		// 3. Check if reward threshold is met
+		if (sd->active_time_counter >= ONLINE_REWARD_TIME) {
+			
+			// Reset the counter
+			sd->active_time_counter -= ONLINE_REWARD_TIME; 
+			
+			// 4. Award the point (Saves to the Account variable #ONLINE_POINTS)
+			int points = pc_readaccountreg(sd, "#ONLINE_POINTS");
+			points++;
+			pc_setaccountreg(sd, "#ONLINE_POINTS", points);
+			
+			// 5. Notify player using the bottom-right display
+			clif_disp_bottomright(sd, "You gained 1 Online Point for active gameplay! (Total: %d)", points);
+		}
+	}
+	// --- [END CUSTOM ONLINE TIMER LOGIC] ---
+
+// The original code continues here:
+// switch (RFIFOW(fd, 0)) {
+Phase 3: Compilation and Deployment
+Save Files: Ensure you have saved both src/map/map.h and src/map/pc.cpp.
+
+Stop Server: Shut down your map-server process completely.
+
+Compile: Run your server's build command (e.g., make clean, then make server on Linux, or Rebuild Solution in Visual Studio).
+
+Restart: Start your map-server. The new logic is now active.
+
+Install NPC: Place the previously generated npc_online_points_shop.txt script into your npc/custom/ folder and use @reloadscript to enable the shop.
+
+//============================================================
+//  Riggo Script: Online Points Trader (Shop)
+//============================================================
+//  This script uses the #ONLINE_POINTS account variable, which 
+//  is natively updated by the server source (pc.cpp).
+//============================================================
+
+- script OnlinePointConfig -1,{
+OnInit:
+    // --- CONFIGURATION ---
+    
+    // Account Point Variable
+    .PointVar$ = "#ONLINE_POINTS"; 
+
+    // Shop Items: ID, Price (in Online Points)
+    // NOTE: Update these item IDs and prices to suit your server economy.
+    setarray .ShopIDs[0],   501,  607,  12208, 13503, 10000; // Sample Items: Potion, Ygg, Battle Manual, Bloody Branch, Custom Item
+    setarray .ShopPrices[0], 1,   10,   50,    100,   250;   // Costs in Online Points
+
+    end;
+}
+
+
+// --- THE SHOP NPC ---
+prontera,165,170,4	script	Online Trader	4_M_01,{
+
+    // 1. Read the points stored on the Account (Account-bound variable)
+    .@points = pc_readaccountreg(getvariableofnpc(.PointVar$, "OnlinePointConfig")); 
+    
+    mes "[Online Trader]";
+    mes "Welcome, diligent traveler. I trade items for the Online Points you earned through active gameplay.";
+    mes "You have ^0000FF" + .@points + " Online Points^000000.";
+    next;
+
+    if (select("Open Shop:Cancel") == 2) close;
+
+    // 2. Build Shop Menu dynamically based on the configuration arrays
+    .@menu$ = "";
+    .@size = getarraysize(getvariableofnpc(.ShopIDs, "OnlinePointConfig"));
+    
+    for(.@i=0; .@i < .@size; .@i++) {
+        .@id = getvariableofnpc(.ShopIDs[.@i], "OnlinePointConfig");
+        .@cost = getvariableofnpc(.ShopPrices[.@i], "OnlinePointConfig");
+        // Display item name and price
+        .@menu$ += getitemname(.@id) + " ^777777(" + .@cost + " pts)^000000:";
+    }
+    
+    .@pick = select(.@menu$) - 1; // Get the index of the chosen item
+    
+    // 3. Purchase Confirmation and Transaction Details
+    .@item_id = getvariableofnpc(.ShopIDs[.@pick], "OnlinePointConfig");
+    .@price = getvariableofnpc(.ShopPrices[.@pick], "OnlinePointConfig");
+    
+    mes "[Online Trader]";
+    mes "Are you sure you want to buy " + getitemname(.@item_id) + " for " + .@price + " points?";
+    
+    if (select("Yes:No") == 2) close;
+    
+    // 4. Final Check for sufficient points
+    if (pc_readaccountreg(getvariableofnpc(.PointVar$, "OnlinePointConfig")) < .@price) {
+        mes "[Online Trader]";
+        mes "I see you lack the required Online Points. Be more active!";
+        close;
+    }
+    
+    // 5. Execute Transaction
+    // Deduct points
+    pc_setaccountreg(getvariableofnpc(.PointVar$, "OnlinePointConfig"), pc_readaccountreg(getvariableofnpc(.PointVar$, "OnlinePointConfig")) - .@price);
+    // Give item
+    getitem .@item_id, 1;
+    
+    mes "[Online Trader]";
+    mes "Here you go. Enjoy your reward.";
+    mes "Your new balance is " + pc_readaccountreg(getvariableofnpc(.PointVar$, "OnlinePointConfig")) + " points.";
+    close;
+}
+
+The system will now track active time (movements, skills, chat) and stop counting if the player is inactive for more than 30 seconds, saving the points reliably on their account.
