@@ -3,10 +3,17 @@
 // =============================================================
 void_island,15,25,5	script	Cain's Follower	123,{
 
-	// 1. SUNDAY CHECK (0 = Sunday)
-	if (gettime(DT_DAYOFWEEK) != 0) {
+	// 1. SCHEDULE CHECK
+	// Logic: If it is NOT Sunday (0) ... AND ... The Manual Force Open is OFF (0)
+	// Then we block entry.
+	if (gettime(DT_DAYOFWEEK) != 0 && $POG_ForceOpen == 0) {
 		mes "The Palace of Ghost only appears on Sundays.";
 		close;
+	}
+	
+	// Optional visual confirmation for GMs/Players if forced open
+	if ($POG_ForceOpen == 1) {
+		mes "^009900[Notice: The gates are manually open.]^000000";
 	}
 
 	// 2. COOLDOWN CHECK (Account Variable)
@@ -32,7 +39,6 @@ void_island,15,25,5	script	Cain's Follower	123,{
 
 	// 4. ONE-WAY RESTRICTION (The "No Comeback" Rule)
 	// We check if this party ALREADY has an instance active.
-	// If they do, we DENY entry. This stops dead players from returning.
 	if (instance_id(getcharid(1)) >= 0) {
 		mes "The gates are sealed.";
 		mes "You cannot rejoin an ongoing attempt.";
