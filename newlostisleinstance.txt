@@ -205,7 +205,7 @@ isle_waiting,150,150,5	script	Lost Isles Officer	123,{
 			// 1. Give Reward
 			getitem 501, 5, .@aid; 
 			// 2. Set 12-Hour Account Cooldown (43200 seconds)
-			setd("#Isle_Victory_CD", gettimetick(2) + 43200, .@aid);
+			setd("#Isle_Victory_CD", gettimetick(2) + 21600, .@aid);
 		}
 
 		instance_destroy();
