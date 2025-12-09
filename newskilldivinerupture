@@ -1,0 +1,168 @@
+//==========================
+// Procedure on adding Divine Rupture skill
+// Custom Skill for Boss Monster
+// Make Boss damage resistance effect chance
+//==========================
+1. Define the Status Change (SC)
+
+We need to add the new debuff to the internal enumeration.
+
+File: src/map/status.hpp
+
+Find: (Around line 600-800, look for the end of the SC list)
+
+	SC_KRIS_SV,
+	SC_GLOOMYDAY_SK,
+
+
+Add Below:
+
+	SC_DEMI_BREAK, // Custom Debuff
+
+
+2. Define the Skill ID
+
+File: src/map/skill.h
+
+Find: (Look for the MAX_SKILL_DB or the end of the skill ID list).
+
+	SC_KRIS_SV,
+	SC_GLOOMYDAY_SK,
+
+
+Add Below:
+
+	SC_DEMI_BREAK, // Custom Debuff
+
+
+2. Define the Skill ID
+
+File: src/map/skill.h
+
+Find: (Look for the MAX_SKILL_DB or the end of the skill ID list. You can also just use a raw ID in the DB, but adding it here is cleaner).
+
+	// ... existing code ...
+	CS_LAST_SKILL,
+
+
+Add/Modify:
+
+3. Implement Status Logic (The Icon & Effect)
+
+This handles what the debuff actually does and which icon it shows.
+
+File: src/map/status.cpp
+
+A. Define Status Icon
+Find: void status_set_viewdata(struct block_list *bl, int class_)
+
+Add inside the switch:
+
+	case SC_DEMI_BREAK:
+		// OPTION 1: Reuse Provoke Icon (Easiest, no Client edits needed)
+		// val = 4; 
+		
+		// OPTION 2: Custom Icon ID (Professional, requires Lua edits below)
+		// Let's use ID 3000 for this example.
+		val = 3000; 
+		break;
+
+
+B. Apply the Stat Change
+Find: void status_calc_pc_additional(struct map_session_data *sd, enum e_status_calc_opt opt)
+Find: if (sc->data[SC_DEFENDER]) (or any standard SC check)
+
+Add Below:
+
+	if (sc->data[SC_DEMI_BREAK]) {
+		// RC_BOSS is the ID for Boss Protocol monsters (MVPs, Minibosses).
+		// We subtract 30 from the resistance. 
+		// In rAthena, 1 = 1% resistance. Negative resistance means they take MORE damage.
+		sd->sub_race[RC_BOSS] -= 30; 
+	}
+
+
+4. Implement Skill Logic (The Attack)
+
+This handles the damage formula and the chance to cast the debuff.
+
+File: src/map/skill.cpp
+
+A. Handle the Attack & Effect
+Find: void skill_castend_damage_id(struct block_list *src, struct block_list *bl, uint16 skill_id, uint16 skill_lv, int64 tick, int flag)
+
+Add inside the switch(skill_id):
+
+	case 10015: // ID for "Divine Rupture"
+		if (ret > 0 && dstsd) { // If damage was dealt (ret > 0) and target is a player (dstsd)
+			// 50% Chance to apply the debuff
+			if (rnd() % 100 < 50) {
+				// Apply SC_DEMI_BREAK for 3000ms (3 seconds)
+				sc_start(src, bl, SC_DEMI_BREAK, 100, 1, 3000);
+				clif_skill_nodamage(src, bl, 10015, 1, 1); // Optional: Show skill use animation
+			}
+		}
+		break;
+
+
+5. Define Damage Formula
+
+File: src/map/battle.cpp
+
+Find: int64 battle_calc_damage_sub(struct battle_interface *b, struct damage_interface *d, int64 damage, uint16 skill_id, uint16 skill_lv)
+
+Add inside the switch(skill_id):
+
+		case 10015: // Divine Rupture
+			// Formula: (ATK * 500%)
+			damage = damage * 500 / 100;
+			break;
+
+
+6. Database Entry
+
+File: db/re/skill_db.yml
+
+Add at the bottom:
+
+  - Id: 10015
+    Name: CS_DIVINERUPTURE
+    Description: "Divine Rupture"
+    MaxLevel: 1
+    Range: 2
+    Hit: Single
+    SkillType: Weapon
+    AttackType: Weapon
+    DamageType: Normal
+    Element: Weapon
+    CastTime: 0
+    AfterCastActDelay: 1000
+    NK: [ SplitDamage ]
+
+
+7. Client Side (Required for Custom Icon)
+
+If you chose Option 2 (ID 3000) in Step 3A, you must edit your client files or the icon will not appear.
+
+1. Edit data/luafiles514/lua files/efst/efstids.lua
+Add the ID to the list:
+
+EFST_DIVINE_RUPTURE = 3000
+
+
+2. Edit data/luafiles514/lua files/stateicon/stateiconinfo.lua
+Register the icon file and description.
+
+StateIconList[EFST_IDs.EFST_DIVINE_RUPTURE] = {
+    haveTimeLimit = 1,
+    posTimeLimitStr = 2,
+    descript = {
+        { "Divine Rupture", COLOR_TITLE_BUFF },
+        { "%s", COLOR_TIME },
+        { "Boss Resistance -30%", COLOR_SYSTEM },
+    },
+    icon = "divine_rupture.tga" -- Make sure this image exists in data/texture/effect/
+}
+
+
+Note: If you chose Option 1 (val=4) in Step 3A, you can skip Step 7, but the icon will look like "Provoke".
