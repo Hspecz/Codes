@@ -3,17 +3,22 @@
 // =============================================================
 void_island,30,50,5	script	Lost Isles Officer	123,{
 	
-	// 1. SATURDAY CHECK (0=Sun, 6=Sat)
-	// We also check if it is before 01:00 AM to enforce the time limit.
-	if (gettime(DT_DAYOFWEEK) != 6) {
+	// 1. SATURDAY CHECK (0=Sun, 6=Sat) OR MANUAL OVERRIDE
+	if (gettime(DT_DAYOFWEEK) != 6 && $Isle_ForceOpen == 0) {
 		mes "The Lost Isles only appear on Saturdays.";
 		close;
 	}
 	
-	if (gettime(DT_HOUR) >= 1) { 
+	// If it is Saturday, check the time limit (Ends 1 AM)
+	// We skip this check if Manual Override is ON
+	if ($Isle_ForceOpen == 0 && gettime(DT_DAYOFWEEK) == 6 && gettime(DT_HOUR) >= 1) { 
 		mes "The event has ended for today (Ends at 1:00 AM).";
 		mes "Come back next Saturday.";
 		close;
+	}
+	
+	if ($Isle_ForceOpen == 1) {
+		mes "^009900[Notice: The route is manually open.]^000000";
 	}
 
 	// 2. COOLDOWN CHECK (Account Variable: #Isle_Victory_CD)
@@ -30,7 +35,6 @@ void_island,30,50,5	script	Lost Isles Officer	123,{
 	}
 
 	// 3. SESSION LOCK CHECK (Character Variable: Isle_Session_Lock)
-	// This prevents re-entry if they are currently inside.
 	if (Isle_Session_Lock == 1) {
 		mes "You are already marked as 'In Progress'.";
 		mes "If your party wiped, please wait a moment for the instance to reset.";
