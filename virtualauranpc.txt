@@ -1,0 +1,282 @@
+Here is the complete, step-by-step procedure to implement the Virtual Aura System. This method allows you to use custom .tga auras without creating custom item/equipment entries.
+
+The Workflow
+Client Side: You register your .tga images as Effect IDs.
+
+Source Side: We modify the server to read player variables and tell the client "Play this Effect ID on this player".
+
+Script Side: An NPC lets players select their aura, which sets the variables.
+
+Step 1: The Guide & Source Code
+This file contains the instructions for the Client and the C++ Source modification.
+
+Virtual Aura System: SRC MOD
+
+Phase 1: Client-Side Setup
+
+Before the server can show an aura, the client must know that the .tga file exists and link it to an ID number.
+
+Prepare your Images:
+
+Take your 3 aura files (e.g., aura_inner.tga, aura_mid.tga, aura_outer.tga).
+
+Place them in your client folder: data/texture/effect/.
+
+Register Effect IDs:
+
+Open data/luafiles514/lua files/effectid/effectid.lua.
+
+Scroll to the bottom of the list.
+
+Add unique IDs for your auras. Note: You must use IDs that your client supports. If you are unsure, try replacing unused IDs or ensure your client allows custom effects.
+
+-- Example additions at the end of the list
+EF_CUSTOM_AURA_INNER = 2000,
+EF_CUSTOM_AURA_MID = 2001,
+EF_CUSTOM_AURA_OUTER = 2002,
+
+
+Link IDs to Files (Str File):
+
+Note: Depending on your client version, this step might vary. In many modern clients, you just need the effect ID mapped. In older ones, you might need to edit effecttool.txt or similar.
+
+If your client uses a purely Lua-based approach, adding them to effectid.lua might be sufficient if the resource loading handles the mapping, otherwise you might need to reuse existing Effect IDs (like unused skill effects) to ensure visibility.
+
+Phase 2: Server-Side Source Modification
+
+This modification forces the server to send the visual effect packets to players based on their variables.
+
+File to Edit: src/map/clif.cpp
+
+1. Handle "Self View" (When you login/map change)
+
+Find Function: void clif_parse_LoadEndAck(int fd, struct map_session_data *sd)
+Location: Near the end of the function, look for if (sd->state.connect_new) { ... }.
+
+Add this code block:
+
+	// [Virtual Aura] Show to Self on login/map load
+	{
+		int aura_inner = pc_readglobalreg(sd, script_get_constant("AURA_INNER"));
+		int aura_mid   = pc_readglobalreg(sd, script_get_constant("AURA_MID"));
+		int aura_outer = pc_readglobalreg(sd, script_get_constant("AURA_OUTER"));
+
+		// Send packet to Self (sd)
+		if (aura_inner > 0) clif_specialeffect(&sd->bl, aura_inner, AREA);
+		if (aura_mid > 0)   clif_specialeffect(&sd->bl, aura_mid,   AREA);
+		if (aura_outer > 0) clif_specialeffect(&sd->bl, aura_outer, AREA);
+	}
+
+
+2. Handle "Other View" (When players see you)
+
+Find Function: void clif_insight(struct block_list *bl, struct map_session_data *sd)
+Location: At the very bottom of the function, just before the final }.
+
+Add this code block:
+
+	// [Virtual Aura] Show to Others coming into view
+	if (bl->type == BL_PC) {
+		struct map_session_data *tsd = (struct map_session_data*)bl;
+		int aura_inner = pc_readglobalreg(tsd, script_get_constant("AURA_INNER"));
+		int aura_mid   = pc_readglobalreg(tsd, script_get_constant("AURA_MID"));
+		int aura_outer = pc_readglobalreg(tsd, script_get_constant("AURA_OUTER"));
+
+		// Send packet to Observer (sd) about the Target (bl)
+		if (aura_inner > 0) clif_specialeffect(bl, aura_inner, AREA);
+		if (aura_mid > 0)   clif_specialeffect(bl, aura_mid,   AREA);
+		if (aura_outer > 0) clif_specialeffect(bl, aura_outer, AREA);
+	}
+
+
+3. Recompile
+
+Run your compilation command (e.g., make clean && make server or Rebuild Solution in Visual Studio) to apply these changes.
+
+NPC for the Virtual Aura
+
+//============================================================
+//  rAthena Script: Virtual Aura Mixer (Smooth Browsing)
+//============================================================
+//  Usage:
+//  1. Config the .PartX_IDs arrays with your 15 EFFECT IDs.
+//  2. Config the .PartX_Names$ arrays with your 15 Names.
+//============================================================
+
+- script AuraConfig -1,{
+OnInit:
+    .PaymentItem = 7179; // Donation Pod ID
+    .Price = 1;          // Cost per part
+
+    // ---------------------------------------------------------
+    // PART 1: INNER AURAS (15 Slots)
+    // ---------------------------------------------------------
+    setarray .Part1_IDs[0], 
+        2000, 2001, 2002, 2003, 2004,  // 1-5
+        2005, 2006, 2007, 2008, 2009,  // 6-10
+        2010, 2011, 2012, 2013, 2014;  // 11-15
+
+    setarray .Part1_Names$[0], 
+        "Inner 1", "Inner 2", "Inner 3", "Inner 4", "Inner 5",
+        "Inner 6", "Inner 7", "Inner 8", "Inner 9", "Inner 10",
+        "Inner 11", "Inner 12", "Inner 13", "Inner 14", "Inner 15";
+
+    // ---------------------------------------------------------
+    // PART 2: MIDDLE AURAS (15 Slots)
+    // ---------------------------------------------------------
+    setarray .Part2_IDs[0], 
+        2015, 2016, 2017, 2018, 2019, 
+        2020, 2021, 2022, 2023, 2024, 
+        2025, 2026, 2027, 2028, 2029;
+
+    setarray .Part2_Names$[0], 
+        "Mid 1", "Mid 2", "Mid 3", "Mid 4", "Mid 5",
+        "Mid 6", "Mid 7", "Mid 8", "Mid 9", "Mid 10",
+        "Mid 11", "Mid 12", "Mid 13", "Mid 14", "Mid 15";
+
+    // ---------------------------------------------------------
+    // PART 3: OUTER AURAS (15 Slots)
+    // ---------------------------------------------------------
+    setarray .Part3_IDs[0], 
+        2030, 2031, 2032, 2033, 2034, 
+        2035, 2036, 2037, 2038, 2039, 
+        2040, 2041, 2042, 2043, 2044;
+
+    setarray .Part3_Names$[0], 
+        "Outer 1", "Outer 2", "Outer 3", "Outer 4", "Outer 5",
+        "Outer 6", "Outer 7", "Outer 8", "Outer 9", "Outer 10",
+        "Outer 11", "Outer 12", "Outer 13", "Outer 14", "Outer 15";
+    
+    end;
+}
+
+prontera,150,150,5	script	Aura Master	4_M_MOC_BOSS,{
+    
+    mes "[Aura Master]";
+    mes "I can infuse your spirit with visual auras.";
+    mes "You can mix and match 3 layers.";
+    mes "Cost: " + getvariableofnpc(.Price, "AuraConfig") + "x " + getitemname(getvariableofnpc(.PaymentItem, "AuraConfig"));
+    next;
+
+    while(1) {
+        // Show Current State
+        mes "--- Current Configuration ---";
+        if (AURA_INNER) mes "Inner: ^0000FFActive (ID " + AURA_INNER + ")^000000";
+        else mes "Inner: None";
+        
+        if (AURA_MID) mes "Mid:   ^0000FFActive (ID " + AURA_MID + ")^000000";
+        else mes "Mid:   None";
+
+        if (AURA_OUTER) mes "Outer: ^0000FFActive (ID " + AURA_OUTER + ")^000000";
+        else mes "Outer: None";
+        mes "---------------------------";
+
+        .@menu$ = "Browse Inner Auras:Browse Mid Auras:Browse Outer Auras:^FF0000Remove All Auras^000000:Done";
+        .@cat_select = select(.@menu$);
+
+        if (.@cat_select == 5) close;
+
+        // Remove All Logic
+        if (.@cat_select == 4) {
+            AURA_INNER = 0;
+            AURA_MID = 0;
+            AURA_OUTER = 0;
+            specialeffect 0; // Force update
+            mes "All auras removed.";
+            next;
+            continue;
+        }
+
+        // Determine which category index (0=Inner, 1=Mid, 2=Outer)
+        .@cat_idx = .@cat_select - 1; 
+
+        // --- BROWSING LOOP ---
+        // Keeps user in the list until they buy or go back
+        while(1) {
+            
+            // Build Dynamic Menu for this Category
+            .@menu_list$ = "";
+            
+            if (.@cat_idx == 0) {
+                .@size = getarraysize(getvariableofnpc(.Part1_Names$, "AuraConfig"));
+                for(.@i=0; .@i < .@size; .@i++) .@menu_list$ += getvariableofnpc(.Part1_Names$[.@i], "AuraConfig") + ":";
+            } else if (.@cat_idx == 1) {
+                .@size = getarraysize(getvariableofnpc(.Part2_Names$, "AuraConfig"));
+                for(.@i=0; .@i < .@size; .@i++) .@menu_list$ += getvariableofnpc(.Part2_Names$[.@i], "AuraConfig") + ":";
+            } else {
+                .@size = getarraysize(getvariableofnpc(.Part3_Names$, "AuraConfig"));
+                for(.@i=0; .@i < .@size; .@i++) .@menu_list$ += getvariableofnpc(.Part3_Names$[.@i], "AuraConfig") + ":";
+            }
+
+            // Add Back Option
+            .@menu_list$ += "^777777<< Back to Categories^000000";
+
+            .@pick = select(.@menu_list$) - 1;
+
+            // BACK Selected
+            if (.@pick == .@size) {
+                // Revert visuals to whatever is actually saved in variables
+                // This cleans up the last previewed aura
+                if (.@cat_idx == 0 && AURA_INNER) specialeffect AURA_INNER;
+                else if (.@cat_idx == 1 && AURA_MID) specialeffect AURA_MID;
+                else if (.@cat_idx == 2 && AURA_OUTER) specialeffect AURA_OUTER;
+                else specialeffect 0; // Or clear if nothing saved
+                
+                break; // Breaks the browsing loop, returns to Main Menu
+            }
+
+            // Retrieve Info
+            if (.@cat_idx == 0) {
+                .@preview_id = getvariableofnpc(.Part1_IDs[.@pick], "AuraConfig");
+                .@preview_name$ = getvariableofnpc(.Part1_Names$[.@pick], "AuraConfig");
+            } else if (.@cat_idx == 1) {
+                .@preview_id = getvariableofnpc(.Part2_IDs[.@pick], "AuraConfig");
+                .@preview_name$ = getvariableofnpc(.Part2_Names$[.@pick], "AuraConfig");
+            } else {
+                .@preview_id = getvariableofnpc(.Part3_IDs[.@pick], "AuraConfig");
+                .@preview_name$ = getvariableofnpc(.Part3_Names$[.@pick], "AuraConfig");
+            }
+
+            // --- PREVIEW LOGIC ---
+            specialeffect .@preview_id; 
+            
+            mes "[Aura Preview]";
+            mes "You are previewing: ^0000FF" + .@preview_name$ + "^000000";
+            mes " ";
+            mes "Look at your character now.";
+            mes "Press 'Next' to confirm or change.";
+            next; // Wait for user input
+            
+            // Decision Menu
+            if (select("Confirm Purchase (" + getvariableofnpc(.Price, "AuraConfig") + " Pods):^777777Select Another^000000") == 2) {
+                // User chose "Select Another"
+                // Loop repeats, allowing them to pick another from the list immediately
+                continue;
+            }
+
+            // --- PURCHASE LOGIC ---
+            
+            if (countitem(getvariableofnpc(.PaymentItem, "AuraConfig")) < getvariableofnpc(.Price, "AuraConfig")) {
+                mes "You need more " + getitemname(getvariableofnpc(.PaymentItem, "AuraConfig"));
+                next;
+                continue; // Back to list
+            }
+
+            // Apply
+            delitem getvariableofnpc(.PaymentItem, "AuraConfig"), getvariableofnpc(.Price, "AuraConfig");
+            
+            if (.@cat_idx == 0) {
+                AURA_INNER = .@preview_id;
+            } else if (.@cat_idx == 1) {
+                AURA_MID = .@preview_id;
+            } else {
+                AURA_OUTER = .@preview_id;
+            }
+            
+            mes "Aura applied permanently!";
+            specialeffect EF_ANGEL; 
+            next;
+            break; // Break browsing loop to show updated Main Menu
+        }
+    }
+}
