@@ -159,3 +159,36 @@ prontera,160,180,4	script	Wanted Board	4_BOARD1,{
 
     close;
 }
+
+
+
+//============================================================
+//  Procedure
+//============================================================
+//How to Install
+//Save the code above as pvp_bounty_system.txt.
+//
+//Place it in your npc/custom/ folder.
+//
+//Add the line npc: npc/custom/pvp_bounty_system.txt to your npc/scripts_custom.conf file.
+//
+//Reload your scripts using the GM command @reloadscript.
+//
+//How it Works
+//Configuration: I've set the default "Wanted" threshold to 5 kills.
+//
+//Becoming Wanted: When a player kills 5 people without dying, the server announces they are WANTED.
+//
+//The Price:
+//
+//Base Price: 100,000 Zeny.
+//
+//Multiplier: 50,000 Zeny per kill in the streak.
+//
+//Example: If someone has a 10 kill streak, the bounty is 100,000 + (10 * 50,000) = 600,000 Zeny.
+//
+//Claiming: If Player A (Wanted) is killed by Player B, Player B automatically gets the money, and Player A's streak resets to 0.
+//
+//Important Note on Testing
+//If you are testing this alone on a local server with two clients (GM and a normal player), you must disable the IP Check in the script (lines 39-42), or the kills won't count.
+//============================================================
