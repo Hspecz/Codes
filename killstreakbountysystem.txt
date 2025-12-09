@@ -1,0 +1,161 @@
+//============================================================
+//  Riggo Kill Streak Bounty System
+//============================================================
+//  Description:
+//  1. Tracks PVP kills.
+//  2. If a player reaches 'MinStreak', they become WANTED.
+//  3. If a player kills a WANTED target, they get a Bounty.
+//  4. Bounty value scales based on the target's streak.
+//============================================================
+
+// --- Configuration ---
+- script BountyConfig -1,{
+OnInit:
+    // Minimum kills in a row to become "Wanted"
+    .MinStreak = 5;
+
+    // Base Bounty Reward (Zeny)
+    .BaseZeny = 100000; 
+
+    // Multiplier per kill in streak
+    // Formula: BaseZeny + (Streak * Multiplier)
+    .StreakMultiplier = 50000; 
+
+    // Currency Type: "ZENY" or "CASH" (Cash Points)
+    .Currency$ = "ZENY";
+
+    // Announce to the whole server? (1=Yes, 0=No)
+    .AnnounceAll = 1;
+
+    end;
+}
+
+// --- The Backend Logic ---
+- script BountyEvent -1,{
+
+OnPCKillEvent:
+    // 1. Safety Checks
+    if (rid == killedrid) end; // Ignore suicides
+
+    // 2. Prevent IP Farming (Optional: Remove if testing on localhost with 2 clients)
+    if (getcharip() == getcharip(killedrid)) {
+        dispbottom "Anti-Abuse: You cannot gain streak from the same IP.";
+        end;
+    }
+
+    // 3. Handle the VICTIM (The person who died)
+    // We need to check if the victim was "Wanted"
+    // We use 'getvariableofnpc' logic or attachrid to check victim's vars
+    
+    .@killer_id = getcharid(3); // Save Killer ID
+    .@killer_name$ = strcharinfo(0);
+    
+    attachrid(killedrid); // Switch scope to Victim
+    
+    if (kill_streak >= getvariableofnpc(.MinStreak, "BountyConfig")) {
+        // Victim was WANTED!
+        .@streak_final = kill_streak;
+        .@victim_name$ = strcharinfo(0);
+        
+        // Calculate Reward based on victim's streak
+        .@base = getvariableofnpc(.BaseZeny, "BountyConfig");
+        .@mult = getvariableofnpc(.StreakMultiplier, "BountyConfig");
+        .@reward = .@base + (.@streak_final * .@mult);
+        
+        kill_streak = 0; // Reset victim streak
+        is_wanted = 0;   // Clear wanted status
+        
+        // Switch back to Killer to give reward
+        attachrid(.@killer_id);
+        
+        if (getvariableofnpc(.Currency$, "BountyConfig") == "ZENY") {
+            Zeny += .@reward;
+            dispbottom "You claimed the bounty of " + .@reward + " Zeny!";
+        } else {
+            #CASHPOINTS += .@reward;
+            dispbottom "You claimed the bounty of " + .@reward + " Cash Points!";
+        }
+        
+        // Global Announcement
+        if (getvariableofnpc(.AnnounceAll, "BountyConfig")) {
+            announce "BOUNTY CLAIMED: " + .@killer_name$ + " has ended " + .@victim_name$ + "'s reign of terror (Streak: " + .@streak_final + ")!", bc_blue|bc_all;
+        }
+        
+        specialeffect EF_COIN; // Visual Effect
+    } else {
+        // Victim was not wanted, just reset their streak
+        kill_streak = 0;
+        // Switch back to Killer to continue processing
+        attachrid(.@killer_id);
+    }
+
+    // 4. Handle the KILLER (Increment Streak)
+    // Only count kills in PVP or GVG maps (Optional check)
+    // if (!getmapflag(strcharinfo(3), mf_pvp) && !getmapflag(strcharinfo(3), mf_gvg)) end;
+
+    kill_streak++;
+    
+    // Check if they just crossed the threshold to become WANTED
+    if (kill_streak == getvariableofnpc(.MinStreak, "BountyConfig")) {
+        is_wanted = 1;
+        specialeffect2 EF_SUI_EXPLOSION; // Explosion effect
+        if (getvariableofnpc(.AnnounceAll, "BountyConfig")) {
+            announce "WANTED: " + strcharinfo(0) + " is now on a killing spree! (5 Kills)", bc_red|bc_all;
+        }
+    } 
+    // Check if they are already wanted and just adding to the streak
+    else if (kill_streak > getvariableofnpc(.MinStreak, "BountyConfig")) {
+        dispbottom "Kill Streak: " + kill_streak + "!";
+        // Optional: Announce every 5 kills after becoming wanted
+        if (kill_streak % 5 == 0) {
+            mapannounce strcharinfo(3), strcharinfo(0) + " is unstoppable! (Streak: " + kill_streak + ")", bc_yellow;
+        }
+    }
+    end;
+}
+
+// --- The Board NPC ---
+prontera,160,180,4	script	Wanted Board	4_BOARD1,{
+    
+    mes "[Wanted Board]";
+    mes "Here are the most dangerous players currently online.";
+    mes "Kill them to claim the bounty.";
+    next;
+
+    // Query the database for online players with high streaks
+    // Note: This uses 'getunits' to scan players. 
+    // For high pop servers, SQL query is better, but this is script-only friendly.
+    
+    .@count = 0;
+    getunits(BL_PC, .@units, MAX_CYCLE_PC);
+    
+    mes "--- ^FF0000CURRENT TARGETS^000000 ---";
+    
+    for (.@i = 0; .@i < getarraysize(.@units); .@i++) {
+        attachrid(.@units[.@i]);
+        
+        if (is_wanted) {
+            .@streak = kill_streak;
+            .@name$ = strcharinfo(0);
+            
+            // Calc price for display
+            .@base = getvariableofnpc(.BaseZeny, "BountyConfig");
+            .@mult = getvariableofnpc(.StreakMultiplier, "BountyConfig");
+            .@price = .@base + (.@streak * .@mult);
+            
+            mes "Name: ^0000FF" + .@name$ + "^000000";
+            mes "Streak: " + .@streak + " kills";
+            mes "Bounty: " + .@price + " " + getvariableofnpc(.Currency$, "BountyConfig");
+            mes "----------------";
+            .@count++;
+        }
+        detachrid(); // Detach to check next player
+    }
+    
+    if (.@count == 0) {
+        mes "The lands are peaceful... for now.";
+        mes "No one is currently Wanted.";
+    }
+
+    close;
+}
