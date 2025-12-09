@@ -1,22 +1,19 @@
-//===== rAthena Script =======================================
-//= Morse Cave
-//===== Description: =========================================
-//= [Official Conversion]
-//= Morse Cave Instance
-//===== Changelogs: ==========================================
-//= 1.0 First version. [Capuche]
-//= 1.1 Updated to match official script. [Capuche]
-//= 1.2 Custom Rules: Mon/Thu only, 6h Cooldown, Wipe Logic.
-//============================================================
-
+// =============================================================
+//  NPC: Morse Cave Entrance
+// =============================================================
 moro_cav,61,69,3	script	Senior Tracker#a1	4_M_JOB_ASSASSIN,{
 	
-	// 1. DAY RESTRICTION (Monday=1, Thursday=4)
-	if (gettime(DT_DAYOFWEEK) != 1 && gettime(DT_DAYOFWEEK) != 4) {
+	// 1. SCHEDULE CHECK (Mon/Thu) OR MANUAL OVERRIDE
+	// Logic: If (Not Monday AND Not Thursday) AND (ForceOpen is OFF) -> Block
+	if ( (gettime(DT_DAYOFWEEK) != 1 && gettime(DT_DAYOFWEEK) != 4) && $Morse_ForceOpen == 0 ) {
 		mes "[Senior Tracker]";
 		mes "The cave is unstable.";
 		mes "We only attempt entry on Mondays and Thursdays.";
 		close;
+	}
+
+	if ($Morse_ForceOpen == 1) {
+		mes "^009900[Notice: The cave is manually open.]^000000";
 	}
 
 	// 2. COOLDOWN CHECK (Account Variable)
@@ -31,7 +28,6 @@ moro_cav,61,69,3	script	Senior Tracker#a1	4_M_JOB_ASSASSIN,{
 	}
 
 	// 3. ONE-WAY TICKET CHECK
-	// If the party already has an instance ID, they cannot enter again.
 	if (instance_id() >= 0) {
 		mes "[Senior Tracker]";
 		mes "Your party is already inside!";
@@ -41,11 +37,8 @@ moro_cav,61,69,3	script	Senior Tracker#a1	4_M_JOB_ASSASSIN,{
 
 	if (ep14_3_isle == 0) {
 		mes "[Senior Tracker]";
-		mes "This is our advance base";
-		mes "to stop Morocc.";
-		mes "I'm a tracker";
-		mes "charged with leading my army";
-		mes "to Morocc's lair.";
+		mes "This is our advance base to stop Morocc.";
+		mes "I'm a tracker charged with leading my army to Morocc's lair.";
 		close;
 	}
 	if (checkweight(2104,2) == 0) {
@@ -59,46 +52,35 @@ moro_cav,61,69,3	script	Senior Tracker#a1	4_M_JOB_ASSASSIN,{
 		close;
 	}
 
-	// REPLACED QUEST CHECK WITH STANDARD ENTRY LOGIC
-	// The original quest check (9319) was removed as requested.
+	mes "[Senior Tracker]";
+	mes "According to my intel, Morocc is hiding here.";
+	next;
+	mes "[Senior Tracker]";
+	mes "Are you ready to enter the Red Flower?";
 	
-	.@hunting_9318 = checkquest(9318,HUNTING);
-	if (.@hunting_9318 == -1) {
-		mes "[Senior Tracker]";
-		mes "According to my intel,";
-		mes "Morocc is hiding out in this place,";
-		mes "recovering his strength.";
-		next;
-		mes "[Senior Tracker]";
-		mes "Fighting Morocc";
-		mes "takes more than a few warriors.";
-		mes "Are you ready to enter the Red Flower?";
-		
-		if (getcharid(1) < 1 || is_party_leader() == false) {
-			mes "[Senior Tracker]";
-			mes "I need to talk to your party leader.";
-			close;
-		}
-		next;
-		if (select( "No.", "Yes." ) == 1) {
-			mes "[Senior Tracker]";
-			mes "Come back";
-			mes "if you change your mind.";
-			close;
-		}
-		if (instance_create("Morse's Cave") < 1) {
-			mes "[Senior Tracker]";
-			mes "The entrance to the Red Flower";
-			mes "is not open yet.";
-			mes "Please come back later.";
-			close;
-		}
-		mes "[Senior Tracker]";
-		mes "The entrance to the Red Flower";
-		mes "has opened.";
-		mes "Good luck.";
+	if (getcharid(1) < 1 || is_party_leader() == false) {
+		mes "I need to speak to your party leader.";
 		close;
 	}
+	
+	if (select( "No.", "Yes." ) == 1) {
+		mes "[Senior Tracker]";
+		mes "Come back if you change your mind.";
+		close;
+	}
+
+	if (instance_create("Morse's Cave") < 1) {
+		mes "[Senior Tracker]";
+		mes "The entrance to the Red Flower is not open yet.";
+		mes "Please try again later.";
+		close;
+	}
+
+	mes "[Senior Tracker]";
+	mes "The entrance is open.";
+	mes "Good luck.";
+	close;
+}
 	else {
 		mes "[Senior Tracker]";
 		mes "Finally you're back!";
