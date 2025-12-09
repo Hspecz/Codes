@@ -1,152 +1,286 @@
-// event_queue_system.txt
+// =============================================================
+//  NPC: Event Queue System (Prontera)
+// =============================================================
+prontera,150,150,5	script	Event Queue	757,{
 
-// NPC: Event Queue System for Palace of Ghost and Lost Isle
-// Place this NPC in a main town (e.g., prontera)
-// Fully handles: queueing, leaving, party creation, instancing
+	// 1. DYNAMIC MENU CONFIG
+	.@menu$ = "";
+	.@is_sunday = (gettime(DT_DAYOFWEEK) == 0);
+	.@is_saturday = (gettime(DT_DAYOFWEEK) == 6);
 
-prontera,150,150,5 script Event Queue 757,{
+	// 2. FAST TRACK CHECK (Manual Full Party of 8)
+	// Updated: Strictly checks for 8 members now
+	if (getpartyid() > 0 && ispartyleader() && getpartycount(getpartyid()) == 8) {
+		if (.@is_sunday || .@is_saturday) {
+			mes "You have a full party of 8 ready for battle.";
+			mes "Fast travel to the entrance?";
+			next;
+			switch(select("Warp to Palace Entrance:Warp to Lost Isle Entrance:No, use Queue")) {
+				case 1:
+					// Warp to Palace Entrance (Void Island 15, 25)
+					callsub L_GroupWarp, "void_island", 15, 25;
+					close;
+				case 2:
+					// Warp to Lost Isle Entrance (Void Island 30, 50)
+					callsub L_GroupWarp, "void_island", 30, 50;
+					close;
+				case 3:
+					break;
+			}
+		}
+	}
 
-    // Constants
-    set .MaxPartySize, 6;
-    set .MinLevel, 255;
-    set .AFKLimit, 300; // 5 minutes
+	// 3. STANDARD QUEUE MENU
+	if (.@is_sunday) .@menu$ = .@menu$ + "Join Palace of Ghost:";
+	if (.@is_saturday) .@menu$ = .@menu$ + "Join Lost Isle:";
+	.@menu$ = .@menu$ + "Leave Queue:View Queues:Exit";
 
-    // Queue arrays (initialize only once)
-    OnInit:
-        setarray .pog_queue[0], 0,0,0,0,0,0;
-        setarray .pog_queue_time[0], 0,0,0,0,0,0;
-        setarray .isle_queue[0], 0,0,0,0,0,0;
-        setarray .isle_queue_time[0], 0,0,0,0,0,0;
-        end;
+	mes "Current Event Status:";
+	if (!.@is_sunday && !.@is_saturday)
+		mes "^777777No events are active today.^000000";
+	else
+		mes "^0000FFRegistration is OPEN.^000000";
+	next;
 
-    function add_to_queue {
-        .@q_ref$ = getarg(0);
-        .@q_time$ = getarg(1);
-        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-            if (getd("."+.@q_ref$+"["+.@i+"]") == 0) {
-                setd("."+.@q_ref$+"["+.@i+"]", getcharid(3));
-                setd("."+.@q_time$+"["+.@i+"]", gettimetick(2));
-                return 1;
-            }
-        }
-        return 0;
-    }
+	.@select = select(.@menu$);
 
-    function remove_from_queue {
-        .@q_ref$ = getarg(0);
-        .@q_time$ = getarg(1);
-        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-            if (getd("."+.@q_ref$+"["+.@i+"]") == getcharid(3)) {
-                setd("."+.@q_ref$+"["+.@i+"]", 0);
-                setd("."+.@q_time$+"["+.@i+"]", 0);
-                return;
-            }
-        }
-    }
+	if (.@is_sunday) {
+		if (.@select == 1) callsub OnJoinPalace;
+		else set .@select, .@select - 1;
+	}
+	if (.@is_saturday) {
+		if (.@select == 1) callsub OnJoinIsle;
+		else set .@select, .@select - 1;
+	}
 
-    function queue_is_full {
-        .@q_ref$ = getarg(0);
-        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-            if (getd("."+.@q_ref$+"["+.@i+"]") == 0)
-                return 0;
-        }
-        return 1;
-    }
+	if (.@select == 1) callsub OnLeaveQueue;
+	if (.@select == 2) callsub OnViewQueue;
+	close;
 
-    function start_event {
-        .@event$ = getarg(0);
-        .@q_ref$ = getarg(1);
-        .@q_time$ = getarg(2);
-        .@map$ = getarg(3);
-        .@var$ = getarg(4);
-        .@waiting_map$ = getarg(5);
+	// ---------------------------------------------------------
+	//  SUBROUTINES
+	// ---------------------------------------------------------
+	OnJoinPalace:
+		if (BaseLevel < .MinLevel || getpartyid() > 0 || #pog_completed == 1) {
+			mes "You are not eligible (Low Level, Already in Party, or Cooldown active)."; 
+			close;
+		}
+		callsub L_AddQueue, "pog_queue", "pog_queue_time";
+		
+		if ($@add_result) {
+			mes "Joined Palace of Ghost queue.";
+			callsub L_CheckFull, "pog_queue";
+			if ($@queue_full) {
+				callsub L_StartEvent, "PalaceOfGhost", "pog_queue", "pog_queue_time", "void_island", 15, 25;
+			}
+		} else {
+			mes "Queue is full or you are already queued.";
+		}
+		close;
 
-        // Pick leader randomly
-        .@leader = 0;
-        while (.@leader == 0) {
-            .@r = rand(.MaxPartySize);
-            .@leader = getd("."+.@q_ref$+"["+.@r+"]");
-        }
+	OnJoinIsle:
+		if (BaseLevel < .MinLevel || getpartyid() > 0 || #isle_completed == 1) {
+			mes "You are not eligible."; 
+			close;
+		}
+		callsub L_AddQueue, "isle_queue", "isle_queue_time";
+		
+		if ($@add_result) {
+			mes "Joined Lost Isle queue.";
+			callsub L_CheckFull, "isle_queue";
+			if ($@queue_full) {
+				callsub L_StartEvent, "LostIsles", "isle_queue", "isle_queue_time", "void_island", 30, 50;
+			}
+		} else {
+			mes "Queue is full or you are already queued.";
+		}
+		close;
 
-        // Create party
-        partycreate .@leader;
-        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-            .@aid = getd("."+.@q_ref$+"["+.@i+"]");
-            if (.@aid > 0 && .@aid != .@leader) {
-                partyaddmember .@aid, .@leader;
-            }
-        }
+	OnLeaveQueue:
+		callsub L_RemoveQueue, "pog_queue", "pog_queue_time";
+		callsub L_RemoveQueue, "isle_queue", "isle_queue_time";
+		mes "Removed from all queues.";
+		close;
 
-        // Create instance
-        .@instance$ = .@event$ + "_" + gettimetick(2);
-        .@ins = instance_create(.@instance$, .@leader);
-        instance_setmap(.@ins, .@map$, 0);
+	OnViewQueue:
+		mes "Palace Queue:";
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (.pog_queue[.@i]) mes "- " + rid2name(.pog_queue[.@i]);
+		}
+		mes "Lost Isle Queue:";
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (.isle_queue[.@i]) mes "- " + rid2name(.isle_queue[.@i]);
+		}
+		close;
 
-        // Warp all to waiting map, then enter instance
-        for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-            .@aid = getd("."+.@q_ref$+"["+.@i+"]");
-            if (.@aid > 0 && isloggedin(.@aid)) {
-                attachrid(.@aid);
-                warp .@waiting_map$, 0, 0;
-                sleep2 500;
-                instance_enter .@ins;
-                setd(""+.@var$+"", 1);
-            }
-            setd("."+.@q_ref$+"["+.@i+"]", 0);
-            setd("."+.@q_time$+"["+.@i+"]", 0);
-        }
-        return;
-    }
+	// =========================================================
+	//  UTILITIES
+	// =========================================================
+	OnInit:
+		set .MaxPartySize, 8; // UPDATED: Auto Party Limit is now 8
+		set .MinLevel, 255;
+		setarray .pog_queue[0], 0,0,0,0,0,0,0,0; // 8 zeros
+		setarray .pog_queue_time[0], 0,0,0,0,0,0,0,0;
+		setarray .isle_queue[0], 0,0,0,0,0,0,0,0;
+		setarray .isle_queue_time[0], 0,0,0,0,0,0,0,0;
+		end;
 
-    mes "Choose an option:";
-    next;
-    switch(select("Join Palace of Ghost:Join Lost Isle:Leave Queue:View Queues:Exit")) {
-        case 1:
-            if (BaseLevel < .MinLevel || getpartyid() > 0 || pog_completed == 1) {
-                mes "You are not eligible."; close;
-            }
-            if (add_to_queue("pog_queue", "pog_queue_time")) {
-                mes "Joined Palace of Ghost queue.";
-                if (queue_is_full("pog_queue")) {
-                    start_event("PoG", "pog_queue", "pog_queue_time", "po_01", "pog_completed", "pog_waiting");
-                }
-            } else {
-                mes "Queue is full or you're already in.";
-            }
-            close;
+	L_AddQueue:
+		.@q$ = getarg(0); .@t$ = getarg(1);
+		set $@add_result, 0;
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (getd("."+.@q$+"["+.@i+"]") == getcharid(3)) return;
+		}
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (getd("."+.@q$+"["+.@i+"]") == 0) {
+				setd("."+.@q$+"["+.@i+"]", getcharid(3));
+				setd("."+.@t$+"["+.@i+"]", gettimetick(2));
+				set $@add_result, 1;
+				return;
+			}
+		}
+		return;
 
-        case 2:
-            if (BaseLevel < .MinLevel || getpartyid() > 0 || isle_completed == 1) {
-                mes "You are not eligible."; close;
-            }
-            if (add_to_queue("isle_queue", "isle_queue_time")) {
-                mes "Joined Lost Isle queue.";
-                if (queue_is_full("isle_queue")) {
-                    start_event("Isle", "isle_queue", "isle_queue_time", "lisland01", "isle_completed", "isle_waiting");
-                }
-            } else {
-                mes "Queue is full or you're already in.";
-            }
-            close;
+	L_RemoveQueue:
+		.@q$ = getarg(0); .@t$ = getarg(1);
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (getd("."+.@q$+"["+.@i+"]") == getcharid(3)) {
+				setd("."+.@q$+"["+.@i+"]", 0);
+				setd("."+.@t$+"["+.@i+"]", 0);
+				return;
+			}
+		}
+		return;
 
-        case 3:
-            remove_from_queue("pog_queue", "pog_queue_time");
-            remove_from_queue("isle_queue", "isle_queue_time");
-            mes "Left all queues.";
-            close;
+	L_CheckFull:
+		.@q$ = getarg(0);
+		set $@queue_full, 1;
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			if (getd("."+.@q$+"["+.@i+"]") == 0) {
+				set $@queue_full, 0;
+				return;
+			}
+		}
+		return;
 
-        case 4:
-            mes "Palace Queue:";
-            for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-                if (.pog_queue[.@i]) mes "- " + rid2name(.pog_queue[.@i]);
-            }
-            mes "Lost Isle Queue:";
-            for (.@i = 0; .@i < .MaxPartySize; .@i++) {
-                if (.isle_queue[.@i]) mes "- " + rid2name(.isle_queue[.@i]);
-            }
-            close;
+	// AUTO PARTY CREATOR + WARP
+	L_StartEvent:
+		.@inst_name$ = getarg(0);
+		.@q$ = getarg(1); .@t$ = getarg(2);
+		.@wait_map$ = getarg(3); .@x = getarg(4); .@y = getarg(5);
 
-        default:
-            close;
-    }
+		// 1. Pick Leader
+		.@leader_aid = 0;
+		while (.@leader_aid == 0) {
+			.@r = rand(.MaxPartySize);
+			.@leader_aid = getd("."+.@q$+"["+.@r+"]");
+		}
+
+		// 2. Create Party
+		if (isloggedin(.@leader_aid)) {
+			attachrid(.@leader_aid);
+			partycreate "EventParty_"+rand(1000); 
+			.@party_id = getcharid(1);
+		} else { return; }
+
+		// 3. Add Members
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			.@aid = getd("."+.@q$+"["+.@i+"]");
+			if (.@aid > 0 && .@aid != .@leader_aid) {
+				if (isloggedin(.@aid)) {
+					attachrid(.@aid);
+					partyaddmember .@party_id, .@leader_aid;
+				}
+			}
+		}
+		
+		// 4. Create Instance
+		attachrid(.@leader_aid);
+		.@instance_id = instance_create(.@inst_name$, .@party_id);
+		
+		if (.@instance_id < 0) return;
+		instance_attach(.@instance_id);
+
+		// 5. WARP TO VOID ISLAND
+		for (.@i = 0; .@i < .MaxPartySize; .@i++) {
+			.@aid = getd("."+.@q$+"["+.@i+"]");
+			if (.@aid > 0) {
+				if (isloggedin(.@aid)) {
+					attachrid(.@aid);
+					warp .@wait_map$, .@x, .@y;
+				}
+				setd("."+.@q$+"["+.@i+"]", 0);
+				setd("."+.@t$+"["+.@i+"]", 0);
+			}
+		}
+		return;
+
+	// MANUAL PARTY WARP (Fast Track)
+	L_GroupWarp:
+		.@map$ = getarg(0); .@x = getarg(1); .@y = getarg(2);
+		getpartymember getcharid(1), 1;
+		for (.@i = 0; .@i < $@partymembercount; .@i++) {
+			.@aid = $@partymemberaid[.@i];
+			if (isloggedin(.@aid)) {
+				attachrid(.@aid);
+				warp .@map$, .@x, .@y;
+			}
+		}
+		attachrid(getcharid(3));
+		return;
+}
+
+// =============================================================
+//  MAP CONTROL: Void Island Restrictions
+// =============================================================
+
+// 1. MAPFLAGS
+// 'loadevent' triggers OnPCLoadMapEvent when they arrive.
+void_island	mapflag	nosave	SavePoint
+void_island	mapflag	noteleport
+void_island	mapflag	nowarp
+void_island	mapflag	loadevent
+
+// 2. ENFORCEMENT SCRIPT
+-	script	VoidEnforcer	-1,{
+
+	// A. ARRIVAL CHECK (Warp-in & Login)
+	// This label runs immediately when a player loads the map
+	OnPCLoginEvent:
+	OnPCLoadMapEvent:
+		if (strcharinfo(3) != "void_island") end;
+
+		// 1. Must have a party
+		if (getcharid(1) == 0) {
+			warp "prontera", 150, 150;
+			dispbottom "You must be in a party to be here.";
+			end;
+		}
+
+		// 2. STRICT PARTY COUNT CHECK
+		// getpartycount returns total members (Online + Offline)
+		.@count = getpartycount(getcharid(1));
+
+		if (.@count < 8) {
+			warp "prontera", 150, 150;
+			dispbottom "Requirement Not Met: Your party is lacking members (Need 8).";
+			end;
+		}
+
+		if (.@count > 8) {
+			warp "prontera", 150, 150;
+			dispbottom "Requirement Not Met: Your party is over the limit (Max 8).";
+			end;
+		}
+		
+		// If count is exactly 8, they stay.
+		end;
+
+	// B. PARTY LEAVE CHECK
+	OnPartyLeave:
+		if (strcharinfo(3) == "void_island") {
+			warp "prontera", 150, 150;
+			dispbottom "You cannot remain on Void Island without a party.";
+		}
+		end;
 }
