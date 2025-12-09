@@ -1,5 +1,5 @@
 // =============================================================
-//  NPC: Lost Isles Officer (Entrance)
+//  Riggo Lost Isles Instance
 // =============================================================
 void_island,30,50,5	script	Lost Isles Officer	123,{
 	
