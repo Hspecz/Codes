@@ -1,0 +1,196 @@
+//============================================================
+// Riggo Script - Monster Hunter
+//============================================================
+
+prontera,155,155,4	script	Guildmaster	4_M_01,{
+
+    mes "[Guildmaster]";
+    
+    // 1. Check Cooldown
+    if (#Hunt_Cooldown > gettimetick(2)) {
+        .@SecondsLeft = #Hunt_Cooldown - gettimetick(2);
+        .@Hours = .@SecondsLeft / 3600;
+        .@Minutes = (.@SecondsLeft % 3600) / 60;
+        
+        mes "You need to rest.";
+        mes "New contracts available in: " + .@Hours + "h " + .@Minutes + "m.";
+        close;
+    }
+
+    // 2. Check Active Quest Status
+    if (#Hunt_Active == 1) {
+        
+        // Check if ALL 5 slots are complete
+        .@CompleteCount = 0;
+        for (.@i = 1; .@i <= 5; .@i++) {
+            if (getd("#Hunt_Count_"+.@i) >= getd("#Hunt_Req_"+.@i)) {
+                .@CompleteCount++;
+            }
+        }
+
+        // --- IF FINISHED ---
+        if (.@CompleteCount >= 5) {
+            mes "Incredible! You wiped out the entire list.";
+            mes "Here is your payment.";
+            next;
+
+            // REWARD DISTRIBUTION (1 from each array)
+            .@idx = rand(getarraysize(.Reward1_ID)); getitem .Reward1_ID[.@idx], .Reward1_Qty[.@idx];
+            .@idx = rand(getarraysize(.Reward2_ID)); getitem .Reward2_ID[.@idx], .Reward2_Qty[.@idx];
+            .@idx = rand(getarraysize(.Reward3_ID)); getitem .Reward3_ID[.@idx], .Reward3_Qty[.@idx];
+
+            // Set Cooldown (4 Hours)
+            #Hunt_Cooldown = gettimetick(2) + 14400;
+            
+            // Reset Variables
+            #Hunt_Active = 0;
+            for (.@i = 1; .@i <= 5; .@i++) {
+                setd "#Hunt_MobID_"+.@i, 0;
+                setd "#Hunt_Req_"+.@i, 0;
+                setd "#Hunt_Count_"+.@i, 0;
+            }
+
+            mes "[Guildmaster]";
+            mes "Take a break. Come back in 4 hours.";
+            close;
+        } 
+        
+        // --- IF NOT FINISHED ---
+        mes "You still have work to do. Here is your list:";
+        mes "--------------------------------";
+        for (.@i = 1; .@i <= 5; .@i++) {
+            .@MobID = getd("#Hunt_MobID_"+.@i);
+            .@Count = getd("#Hunt_Count_"+.@i);
+            .@Req   = getd("#Hunt_Req_"+.@i);
+            
+            if (.@Count >= .@Req)
+                mes "^00FF00[COMPLETE] " + getmonstername(.@MobID) + "^000000";
+            else
+                mes "^FF0000" + getmonstername(.@MobID) + ": " + .@Count + " / " + .@Req + "^000000";
+        }
+        mes "--------------------------------";
+        close;
+    }
+
+    // 3. GENERATE NEW QUEST
+    mes "I have a heavy workload today. I need you to hunt down 5 different types of threats.";
+    mes "Some might be weak, some might be Bosses.";
+    mes "Are you ready?";
+    next;
+    
+    if(select("I'm ready.:No thanks.") == 2) close;
+
+    // --- GENERATION LOOP (5 Slots) ---
+    for (.@i = 1; .@i <= 5; .@i++) {
+        
+        // Roll for Type: 0-79 = Normal (80%), 80-99 = MVP (20%)
+        if (rand(100) < 80) {
+            // NORMAL MOB
+            // Loop to ensure no duplicates
+            do {
+                .@idx = rand(getarraysize(.Normal_Pool));
+                .@PickedID = .Normal_Pool[.@idx];
+                .@IsDupe = 0;
+                // Check previous slots for dupe
+                for (.@k = 1; .@k < .@i; .@k++) {
+                    if (getd("#Hunt_MobID_"+.@k) == .@PickedID) .@IsDupe = 1;
+                }
+            } while (.@IsDupe);
+
+            setd "#Hunt_MobID_"+.@i, .@PickedID;
+            setd "#Hunt_Req_"+.@i, rand(20, 100); // Quantity 20 to 100
+        } 
+        else {
+            // MVP MOB
+            do {
+                .@idx = rand(getarraysize(.MVP_Pool));
+                .@PickedID = .MVP_Pool[.@idx];
+                .@IsDupe = 0;
+                for (.@k = 1; .@k < .@i; .@k++) {
+                    if (getd("#Hunt_MobID_"+.@k) == .@PickedID) .@IsDupe = 1;
+                }
+            } while (.@IsDupe);
+
+            setd "#Hunt_MobID_"+.@i, .@PickedID;
+            setd "#Hunt_Req_"+.@i, rand(1, 3); // Quantity 1 to 3
+        }
+
+        // Initialize Count
+        setd "#Hunt_Count_"+.@i, 0;
+    }
+
+    #Hunt_Active = 1;
+
+    mes "[Guildmaster]";
+    mes "Here is your list. Good luck.";
+    mes "Check your Chat Box for updates.";
+    close;
+
+// ---------------- CONFIGURATION ----------------
+OnInit:
+    // --- NORMAL POOL ---
+    setarray .Normal_Pool[0], 
+        1002, 1063, 1113, 1049, 1023, 1152, 1163, // Poring, Lunatic, Drops, Picky, Orc, High Orc, Raydric
+        1031, 1019, 1101, 1159, 1368, 1189, 1261; // Poporing, Pecopeco, Wolf, Deviruchi, Incubus, Breeze, Hill Wind
+
+    // --- MVP POOL ---
+    setarray .MVP_Pool[0], 
+        1039, 1115, 1087, 1150, 1038, 1252, 1112; // Baphomet, Eddga, Orc Hero, Moonlight, Osiris, Garm, Drake
+
+    // --- REWARDS ---
+    // Array 1
+    setarray .Reward1_ID[0],  607, 608;    setarray .Reward1_Qty[0], 10, 20;
+    // Array 2
+    setarray .Reward2_ID[0],  671, 673;    setarray .Reward2_Qty[0], 5,  10;
+    // Array 3
+    setarray .Reward3_ID[0],  603, 12202;  setarray .Reward3_Qty[0], 1,  1;
+    end;
+
+// ---------------- KILL EVENT ----------------
+OnNPCKillEvent:
+    // 1. Check if active
+    if (#Hunt_Active != 1) end;
+    
+    // 2. Loop through the 5 slots to see if the killed mob matches one of them
+    for (.@i = 1; .@i <= 5; .@i++) {
+        
+        .@TargetID = getd("#Hunt_MobID_"+.@i);
+        
+        // If match found
+        if (killedrid == .@TargetID) {
+            
+            .@Current = getd("#Hunt_Count_"+.@i);
+            .@Req     = getd("#Hunt_Req_"+.@i);
+            
+            // Only update if not yet finished
+            if (.@Current < .@Req) {
+                
+                // Increment
+                setd "#Hunt_Count_"+.@i, .@Current + 1;
+                .@NewCount = .@Current + 1;
+
+                // Display Message
+                if (.@NewCount >= .@Req) {
+                     dispbottom "[Hunt]: " + getmonstername(.@TargetID) + " Completed! (" + .@NewCount + "/" + .@Req + ")", 0x00FF00;
+                     // Optional: Check if ALL are done to notify user to return
+                     callsub CheckAllDone;
+                } else {
+                     dispbottom "[Hunt]: " + getmonstername(.@TargetID) + " Killed. (" + .@NewCount + "/" + .@Req + ")", 0xFFFF00;
+                }
+            }
+            // Break loop (Assuming a mob ID only appears once in the list)
+            break;
+        }
+    }
+    end;
+
+CheckAllDone:
+    .@Done = 0;
+    for (.@k = 1; .@k <= 5; .@k++) {
+        if (getd("#Hunt_Count_"+.@k) >= getd("#Hunt_Req_"+.@k)) .@Done++;
+    }
+    if (.@Done >= 5) {
+        dispbottom "All targets eliminated! Return to the Guildmaster for your reward.", 0x00FFFF;
+    }
+    return;
+}
