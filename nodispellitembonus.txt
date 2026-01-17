@@ -7,103 +7,25 @@
 // Add the constant to your db/const.txt.
 // Use it in an item: { bonus bNoDispell; }.
 
-1. Edit src/map/map.h
-
-We need to add a flag to the player's session data to track if this bonus is active.
-
-Find:
-
-		unsigned int unbreakable_garment : 1;
-		unsigned int unbreakable_weapon : 1;
-		unsigned int unbreakable_shield : 1;
-		unsigned int unbreakable_helm : 1;
-		unsigned int unbreakable_shoes : 1;
-
-Add below:
-
-		unsigned int no_dispell : 1; // Custom: Immunity to Dispell
-
-2. Edit src/map/script_constants.hpp
-
-We need to assign a unique ID to this new bonus so the script engine recognizes it.
-
-Find:
-
-	SP_UNBREAKABLE_SHOES = 47,
-
-
-Add below:
-
-	SP_NODISPELL = 1001, // Custom ID (Ensure this ID is unique in your server)
-
-
-3. Edit src/map/pc.cpp
-
-We need to tell the server what to do when it reads this bonus from an item.
-
-Find: (In function pc_bonus)
-
-		case SP_UNBREAKABLE_SHOES:
-			if (sd->state.lr_flag != 2)
-				sd->bonus.unbreakable_shoes = 1;
-			break;
-
-
-Add below:
-
-		case SP_NODISPELL:
-			if (sd->state.lr_flag != 2)
-				sd->bonus.no_dispell = 1;
-			break;
-
-
-4. Edit src/map/skill.cpp
-
-This is the core logic. We check if the target has the bonus when Dispell is cast.
-
-Find: (In function skill_castend_damage_id)
-
-		case SA_DISPELL:
-		case SO_DISPELL: // Soul Linker Dispell logic often mirrors SA
-			if (tsc && tsc->data[SC_ROGUE_PRESERVE])
-				status_change_end(bl, SC_ROGUE_PRESERVE, INVALID_TIMER);
-
-
-Replace/Modify to look like this:
-
-		case SA_DISPELL:
-		case SO_DISPELL:
-			// --- Custom: bNoDispell Check ---
-			if (dstsd && dstsd->bonus.no_dispell) {
-				clif_skill_fail(src, skill_id, USESKILL_FAIL_LEVEL, 0); // Show "Skill Failed" to caster
-				break; // Stop the skill completely
-			}
-			// -------------------------------
-
-			if (tsc && tsc->data[SC_ROGUE_PRESERVE])
-				status_change_end(bl, SC_ROGUE_PRESERVE, INVALID_TIMER);
-
-
-Note: dstsd is the standard variable in this function for the Target Player. If your version uses tsd or just bl, cast it: struct map_session_data *dstsd = BL_CAST(BL_PC, bl);
-
-5. Database Update (Server Side)
-
-To make the script engine recognize the text bNoDispell, you must add it to your const database.
-
-File: db/pre-re/const.txt (or db/re/const.txt if Renewal)
-
-Add at the bottom:
-
-bNoDispell	1001
-
-
-(Make sure the number 1001 matches the SP_NODISPELL value you added in step 2).
-
-6. How to Use
-
+1. Open pc.hpp
+	Find "// zeroed vars start here." you should see struct s_bonus and some int32 things
+insert after the last entry
+	// bNoDispell Mod
+	unsigned int no_dispell : 1;
+	// bNoDispell Mod
+2. Open script.hpp
+	On the very first line after the Rathena copyright insert this
+	// Custom bNoDispell ID
+	#define SP_NODISPELL 100001
+	// Custom bNoDispell ID
+3. Open script_constants.hpp
+	Find "export_constant2("bWeaponSubSize", SP_WEAPON_SUBSIZE);"
+insert after the last constant export entry
+	// bNoDispell Mod
+	export_constant2("bNoDispell", SP_NODISPELL);
+	// bNoDispell Mod
+4. How to Use
 Create an item (like a custom card or headgear) and add the script:
-
-{ bonus bNoDispell; }
-
+{ bonus bNoDispell,1; }
 
 When a player equips this item, any Sage casting Dispell on them will fail, but other skills like Decrease Agi or Divest will still work.
