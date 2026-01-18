@@ -1,0 +1,19 @@
+//=====================
+// 
+// Adding Custom Race (Riggo)
+// 
+//=====================
+1. Open map.hpp
+	Find enum e_race : int8{
+	Before RC_MAX insert your custom race
+2. Open script_constants.hpp
+	Find export_constant(RC_ALL);
+	Before that line put export_constant(RC_customrace);
+3. Open clif.cpp
+	Find case RC_FORMLESS:
+	After the last RC entry put your custom race
+4. Open battle.cpp
+	Put your innate weakness and advantage of those custom races
+5. Open atcommand.cpp
+	Find ACMD_FUNC(mobinfo)
+	Then put the race name
