@@ -1,0 +1,31 @@
+//=====================
+// 
+// Adding Custom Skill (Riggo)
+// NPC skill like elemental attack
+// 
+//=====================
+1. Open skill.cpp
+	Find case NPC_DARKNESSATTACK:
+	put at last entry case NPC_PRISMATICATTACK: //Custom Skill
+2.	Find static std::unordered_map
+	put { "Prismatic", ELE_PRISMATIC}, below { "Undead", ELE_UNDEAD },
+3. Open battle.cpp
+	Find all case NPC_DARKNESSATTACK:
+  and put case NPC_PRISMATICATTACK: //Custom Skill under every instances of darkness attack
+4. Open skill.hpp
+	Find SP_KAUTE,
+	put below NPC_PRISMATICATTACK = 2650, //Custom Skill;
+5. Open skill_db.yml
+  insert
+    - Id: 2650
+    Name: NPC_PRISMATICATTACK
+    Description: Prismatic Attribute Attack
+    MaxLevel: 10
+    Type: Weapon
+    TargetType: Attack
+    Flags:
+      IsNpc: true
+    Range: -7
+    Hit: Single
+    HitCount: 1
+    Element: Prismatic
