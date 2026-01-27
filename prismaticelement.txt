@@ -10,14 +10,20 @@
 	put { "Prismatic", ELE_PRISMATIC}, below { "Undead", ELE_UNDEAD },
 3. Open clif.cpp
 	Find packet.undead = static_cast<decltype(packet.undead)>( std::max( elemental_attribute_db.getAttribute(md.status.ele_lv, ELE_UNDEAD, md.status.def_ele), (int16)0 ) );
-	put below packet.prismatic = static_cast<decltype(packet.prismatic)>( std::max( elemental_attribute_db.getAttribute(md.status.ele_lv, ELE_PRISMATIC, md.status.def_ele), (int16)0 ) );
-2. Open script_constants.hpp
+	put below packet.prismatic = static_cast<decltype(packet.prismatic)>( std::max( elemental_attribute_db.getAttribute(md.status.ele_lv, ELE_PRISMATIC,
+	md.status.def_ele), (int16)0 ) );
+	Find case ELE_UNDEAD:	ele_name = "Undead Element"; break;
+	put case ELE_PRISMATIC:	ele_name = "Prismatic Element"; break;
+4. Open packets.hpp
+	Find struct PACKET_ZC_MONSTER_INFO {
+	below uint8 undead; put uint8 prismatic;
+5. Open script_constants.hpp
 	Find export_constant(ELE_UNDEAD);
 	After export_constant(ELE_ALL);
 	put export_constant(ELE_PRISMATIC);
-4. Open battle.cpp
+6. Open battle.cpp
 	Find static void battle_calc_element_damage
 	and put your battle logic
-5. Open atcommand.cpp
+7. Open atcommand.cpp
 	Find ACMD_FUNC(mobinfo)
 	Then put the element name
