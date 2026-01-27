@@ -13,7 +13,8 @@
 	Find case RC_FORMLESS:
 	After the last RC entry put your custom race
 4. Open battle.cpp
-	Put your innate weakness and advantage of those custom races
+	Find struct Damage battle_calc_attack
+	and insert your battle logic
 5. Open atcommand.cpp
 	Find ACMD_FUNC(mobinfo)
 	Then put the race name
