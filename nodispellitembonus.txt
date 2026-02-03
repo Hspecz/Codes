@@ -7,12 +7,15 @@
 // Add the constant to your db/const.txt.
 // Use it in an item: { bonus bNoDispell; }.
 
-1. Open pc.hpp
-	Find "// zeroed vars start here." you should see struct s_bonus and some int32 things
-insert after the last entry
-	// bNoDispell Mod
-	unsigned int no_dispell : 1;
-	// bNoDispell Mod
+1. Open pc.cpp
+	Find case SP_CRT
+	Paste after 
+		/// bNoDispell Mod
+		case SP_NODISPELL: // 
+			if (sd->state.lr_flag != 2)
+				sd->bonus.no_dispell = 1;
+			break;
+		// bNoDispell Mod
 2. Open script.hpp
 	On the very first line after the Rathena copyright insert this
 	// Custom bNoDispell ID
