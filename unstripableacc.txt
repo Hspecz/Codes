@@ -1,0 +1,33 @@
+//==============================
+// Riggo Unstrippable Acc Item Bonus Procedure
+//==============================
+// Instructions
+// Apply the changes below to your src/ files.
+// Recompile your server.
+// Add the constant to your db/const.txt.
+// Use it in an item: { bonus bUnstripableAcc,1; }.
+
+1. Open pc.cpp
+	Find case SP_CRT
+	Paste after 
+		// bUnstrippableAcc Mod
+		case SP_UNSTRIPABLEACC: // 
+			if (sd->state.lr_flag != LR_FLAG_ARROW)
+				sd->bonus.unstripable_equip |= EQP_ACC;
+			break;
+		// bUnstrippableAcc Mod
+2. Open script.hpp
+	On the very first line after the Rathena copyright insert this
+	// Custom bNoDispell ID
+	#define SP_UNSTRIPABLEACC 100001
+	// Custom bNoDispell ID
+3. Open script_constants.hpp
+	Find "export_constant2("bWeaponSubSize", SP_WEAPON_SUBSIZE);"
+insert after the last constant export entry
+	// bUnstrippableAcc Mod
+	export_constant2("bUnstripableAcc", SP_UNSTRIPABLEACC);
+	// bUnstrippableAcc Mod
+4. How to Use
+Create an item (like a custom card or headgear) and add the script:
+{ bonus bUnstripableAcc,1; }
+
