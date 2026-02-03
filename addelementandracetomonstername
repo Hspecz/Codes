@@ -1,0 +1,78 @@
+1. Open clif.cpp
+  Find case BL_MOB: {
+			mob_data *md = (mob_data *)bl;
+	Replace the whole BM_MOB code black with 
+	
+	case BL_MOB: {
+			mob_data *md = (mob_data *)bl;
+
+			// [CUSTOM MOD] 1. Define Names
+			char new_name[NAME_LENGTH];
+			
+			// [CUSTOM MOD]
+			const char* race_name[] = { "Form", "Und", "Brut", "Plnt", "Insc", "Fish", "Demn", "Demi", "Angl", "Drag", "Humn", "Dorm", "Titn", "Sinf", "Deit" };
+			const char* ele_name[] = { "Neu", "Wat", "Ear", "Fir", "Wnd", "Poi", "Hol", "Drk", "Gho", "Und", "Prsm" };
+
+			// [CUSTOM MOD] 2. Calculate Stats
+			int ele_type = md->status.def_ele % 20; 
+			int ele_lv = md->status.def_ele / 20;
+			int race_id = md->status.race;
+
+			// [CUSTOM MOD] 3. VISUAL FIXES
+			// Fix A: If Level is 0, force it to display as 1 (Visual only)
+			if (ele_lv == 0) ele_lv = 1;
+
+			// Fix B: Safety Checks
+			if (ele_type < 0 || ele_type > 10) ele_type = 0; 
+			if (race_id < 0 || race_id > 14) race_id = 0; // Ensures your Race 14 works
+
+			// [CUSTOM MOD] 4. Format Name
+			snprintf(new_name, sizeof(new_name), "%s %s-%s% d", md->name, race_name[race_id], ele_name[ele_type], ele_lv);
+
+			// --- SEND PACKET ---
+			if( md->guardian_data && md->guardian_data->guild_id ){
+				PACKET_ZC_ACK_REQNAMEALL packet = { 0 };
+				packet.packet_id = HEADER_ZC_ACK_REQNAMEALL;
+				packet.gid = bl->id;
+				
+				safestrncpy( packet.name, new_name, NAME_LENGTH ); 
+				safestrncpy( packet.guild_name, md->guardian_data->guild_name, NAME_LENGTH );
+				safestrncpy( packet.position_name, md->guardian_data->castle->castle_name, NAME_LENGTH );
+
+				clif_send(&packet, sizeof(packet), src, target);
+
+			} else if( battle_config.show_mob_info ){
+				PACKET_ZC_ACK_REQNAMEALL packet = { 0 };
+				packet.packet_id = HEADER_ZC_ACK_REQNAMEALL;
+				packet.gid = bl->id;
+				
+				safestrncpy( packet.name, new_name, NAME_LENGTH );
+
+				char mobhp[50]; 
+				char *str_p = mobhp;
+
+				if( battle_config.show_mob_info&4 )
+					str_p += sprintf( str_p, "Lv. %d | ", md->level );
+				if( battle_config.show_mob_info&1 )
+					str_p += sprintf( str_p, "HP: %u/%u | ", md->status.hp, md->status.max_hp );
+				if( battle_config.show_mob_info&2 )
+					str_p += sprintf( str_p, "HP: %u%% | ", get_percentage( md->status.hp, md->status.max_hp ) );
+
+				if( str_p != mobhp ){
+					*(str_p-3) = '\0';
+					safestrncpy( packet.party_name, mobhp, NAME_LENGTH );
+				}
+
+				clif_send(&packet, sizeof(packet), src, target);
+
+			} else {
+				PACKET_ZC_ACK_REQNAMEALL_NPC packet = { 0 };
+				packet.packet_id = HEADER_ZC_ACK_REQNAMEALL_NPC;
+				packet.gid = bl->id;
+				
+				safestrncpy(packet.name, new_name, NAME_LENGTH); 
+				
+				clif_send(&packet, sizeof(packet), src, target);
+			}
+		}
+		break; // <--- Ends the BL_MOB (Monster) Case
