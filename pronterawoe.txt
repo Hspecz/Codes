@@ -1,6 +1,5 @@
 // ==============================================================================
-//  Ruhn Prontera Woe - Integrated Advanced Reward Version
-//  Map: pronterawoe | Castle: pronterawoe
+//  Ruhn Prontera Woe
 // ==============================================================================
 
 // --- MANAGER: Handles the Map Logic & Emperium ---
@@ -62,8 +61,9 @@ OnInit:
 	$PRT_WOE_Active = 0;
 
 	// --- REWARD CONFIGURATION ---
-	// [1] Enable Rewards | [8] Duplicate IP check
-	set .Options, 1|8; 
+	// [1] Enable Rewards | [2] Enable Mailing | [8] IP Check | [16] Online only
+	// 1 + 2 + 8 + 16 = 27
+	set .Options, 1|2|8|16; 
 	setarray .reward_id[0], 126000, 126003; 
 	setarray .reward_amount[0], 2, 20;
 	set .reward_zeny, 3000000;
@@ -222,6 +222,7 @@ prontera,152,172,4	script	Attacker Warper	55,{
 	mes "[Attacker Warper]";
 	if ($PRT_WOE_Active == 0) {
 		mes "The War is not currently active.";
+		mes "Starts on every Sunday 8PM-9PM.";
 		close;
 	}
 	if (getcharid(2) == 0) {
@@ -248,3 +249,14 @@ prontera,160,172,4	script	Castle Defender	109,{
 	warp "pronterawoe", 156, 316;
 	end;
 }
+
+
+pronterawoe	mapflag	gvg			// Enables GvG mechanics and damage reduction
+pronterawoe	mapflag	gvg_castle		// Designates the map as an official WoE castle
+pronterawoe	mapflag	noteleport		// Prevents Fly Wings and Teleport skill
+pronterawoe	mapflag	nowarp			// Prevents Acolyte Warp Portal skill
+pronterawoe	mapflag	nowarpto		// Prevents GMs or commands from warping into the map
+pronterawoe	mapflag	nosave	SavePoint	// Sends players to their save point on logout/death
+pronterawoe	mapflag	nomemo			// Prevents players from memoizing the map
+pronterawoe	mapflag	nopenalties		// Prevents EXP loss upon death
+pronterawoe	mapflag	noicewall		// Disables Ice Wall to prevent blocking paths
