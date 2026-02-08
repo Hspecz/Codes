@@ -1,205 +1,250 @@
-//============================================================
-// Riggo Mini WoE: Prontera War
-//============================================================
+// ==============================================================================
+//  Ruhn Prontera Woe - Integrated Advanced Reward Version
+//  Map: pronterawoe | Castle: pronterawoe
+// ==============================================================================
 
-// ---------------- CONTROLLER NPC ----------------
--	script	MiniWoE_Controller	-1,{
+// --- MANAGER: Handles the Map Logic & Emperium ---
+// ------------------------------------------------------------------------------
+-	script	Gld_Agit_Manager_Custom	-1,{
+	end;
 
-OnInit:
-    // --- GM COMMAND BINDING ---
-    // Binds @pronterawoe to this NPC's "OnCommand" label. Level 99 required.
-    bindatcmd "pronterawoe", strnpcinfo(3)+"::OnCommand", 99, 99;
+OnAgitStart:
+	MapRespawnGuildID "pronterawoe", GetCastleData("pronterawoe", CD_GUILD_ID), 6;
+	GvgOn "pronterawoe";
+	donpcevent "Gld_Agit_Manager_Custom::OnStartArena";
+	end;
 
-    // ---------------- CONFIGURATION ----------------
-    // Prize Arrays (ID, Qty)
-    setarray .Prize1_ID[0],  607, 608, 609;   setarray .Prize1_Qty[0], 20, 30, 10;
-    setarray .Prize2_ID[0],  12208, 12210;    setarray .Prize2_Qty[0], 2, 3;
-    setarray .Prize3_ID[0],  671, 673;        setarray .Prize3_Qty[0], 5, 10;
-    setarray .Prize4_ID[0],  12024, 12202;    setarray .Prize4_Qty[0], 5, 5;
-    setarray .Prize5_ID[0],  13517, 13529;    setarray .Prize5_Qty[0], 1, 1;
+OnStartArena:
+	if (!$PRT_WOE_Active) end;
+	setarray .@emproom[0], 156, 322;
+	if (!mobcount("pronterawoe", "Gld_Agit_Manager_Custom::OnAgitBreak")) {
+		monster "pronterawoe", .@emproom[0], .@emproom[1], "Emperium", 1288, 1, "Gld_Agit_Manager_Custom::OnAgitBreak";
+	}
+	end;
 
-    .EventDuration = 3600000; // 1 Hour
-    end;
+OnAgitBreak:
+	set .@GID, getcharid(2);
+	if (.@GID <= 0) {
+		donpcevent "Gld_Agit_Manager_Custom::OnStartArena";
+		end;
+	}
+	SetCastleData "pronterawoe", CD_GUILD_ID, .@GID;
+	mapannounce "pronterawoe", "The emperium has been destroyed.", bc_map|bc_woe, "0x00CCFF", FW_NORMAL, 12;
+	MapRespawnGuildID "pronterawoe", .@GID, 6;
 
-// ---------------- GM COMMAND LOGIC ----------------
-OnCommand:
-    if (.Active) {
-        dispbottom "[Mini WoE]: Event is currently ACTIVE. Force stopping...";
-        callsub OnEndEvent;
-    } else {
-        dispbottom "[Mini WoE]: Event is INACTIVE. Starting now...";
-        callsub OnStartEvent;
-    }
-    end;
+	// Capture Reward (Immediate for Breaker)
+	getitem 126004, 10; // Bronze Coin
+	getitem 126005, 5;  // Silver Coin
+	dispbottom "Capture rewards added to inventory.";
 
-// ---------------- TIME TRIGGERS ----------------
-OnClock0800:
-OnClock2000:
-    callsub OnStartEvent;
-    end;
+	sleep 500;
+	if( $PRT_WOE_Active )
+		donpcevent "Gld_Agit_Manager_Custom::OnStartArena";
 
-// ---------------- MAIN LOGIC ----------------
-OnStartEvent:
-    if (.Active) end;
-    .Active = 1;
-    
-    announce "[Mini WoE]: The Battle for Prontera has begun!", bc_all|bc_blue;
+	sleep 7000;
+	announce "The [Illusion Prontera] castle has been conquered by the [" + getguildName(.@GID) + "] guild.", bc_all|bc_woe;
+	donpcevent "Illusion Prontera Owner::OnUpdate";
+	end;
 
-    // 1. Map Flags
-    setmapflag "prontera", mf_pvp;
-    setmapflag "prontera", mf_gvg;
-    setmapflag "prontera", mf_nomineeffect;
-    setmapflag "prontera", mf_loadevent; // Triggers OnPCLoadMapEvent
-
-    // 2. Hide NPCs (Loop to hide normal shopkeepers etc)
-    getmapunits "prontera", BL_NPC, .@NpcIDs;
-    for (.@i = 0; .@i < getarraysize(.@NpcIDs); .@i++) {
-        // Do not hide the Conqueror Flag!
-        if (strnpcinfo(2, .@NpcIDs[.@i]) != "Prontera Conqueror") {
-            disablenpc .@NpcIDs[.@i];
-        }
-    }
-
-    // 3. THE PURGE: Kick existing Guildless players
-    getmapunits "prontera", BL_PC, .@MapPlayers;
-    for (.@i = 0; .@i < getarraysize(.@MapPlayers); .@i++) {
-        if (attachrid(.@MapPlayers[.@i])) {
-            if (getcharid(2) == 0) {
-                message strcharinfo(0), "Guildless players aren't allowed in Prontera for the time being.";
-                warp "morocc", 0, 0;
-            }
-            detachrid();
-        }
-    }
-
-    // 4. Spawn Emperium & Start Timer
-    callsub Sub_SpawnEmp;
-    initnpctimer;
-    end;
-
-// ---------------- MAP ENTRY EVENT ----------------
-OnPCLoadMapEvent:
-    if (!.Active) end;
-    if (strcharinfo(3) != "prontera") end;
-
-    if (getcharid(2) == 0) {
-        sleep2 100; 
-        message strcharinfo(0), "Guildless players aren't allowed in Prontera for the time being.";
-        warp "morocc", 0, 0;
-    }
-    end;
-
-// ---------------- SUB: SPAWN EMPERIUM ----------------
-Sub_SpawnEmp:
-    monster "prontera", 150, 150, "Emperium", 1288, 1, strnpcinfo(3)+"::OnEmpDead";
-    return;
-
-// ---------------- TIMER EVENT (END) ----------------
-OnTimer3600000:
-    announce "[Mini WoE]: Time is up! The war is over.", bc_all|bc_blue;
-    callsub OnEndEvent;
-    end;
-
-// ---------------- BREAKER LOGIC ----------------
-OnEmpDead:
-    if (attachrid(killerrid)) {
-        .@WinnerGID = getcharid(2);
-        
-        // Security: Guildless Check
-        if (.@WinnerGID == 0) {
-            warp "morocc", 0, 0; 
-            callsub Sub_SpawnEmp; 
-            end;
-        }
-
-        .WinnerName$ = strcharinfo(0);
-        .GuildName$ = getguildname(.@WinnerGID);
-        
-        announce "[Mini WoE]: Emperium captured by " + .WinnerName$ + " [" + .GuildName$ + "]!", bc_all|bc_yellow;
-
-        // --- UPDATE THE FLAG ---
-        $MiniWoE_GID = .@WinnerGID;
-        doevent "Prontera Conqueror::OnUpdate"; 
-        // -----------------------
-
-        // Rewards
-        .@idx = rand(getarraysize(.Prize1_ID)); getitem .Prize1_ID[.@idx], .Prize1_Qty[.@idx];
-        .@idx = rand(getarraysize(.Prize2_ID)); getitem .Prize2_ID[.@idx], .Prize2_Qty[.@idx];
-        .@idx = rand(getarraysize(.Prize3_ID)); getitem .Prize3_ID[.@idx], .Prize3_Qty[.@idx];
-        .@idx = rand(getarraysize(.Prize4_ID)); getitem .Prize4_ID[.@idx], .Prize4_Qty[.@idx];
-        .@idx = rand(getarraysize(.Prize5_ID)); getitem .Prize5_ID[.@idx], .Prize5_Qty[.@idx];
-
-        // Warp Logic
-        getmapunits "prontera", BL_PC, .@MapPlayers;
-        for (.@i = 0; .@i < getarraysize(.@MapPlayers); .@i++) {
-            if (attachrid(.@MapPlayers[.@i])) {
-                .@CurrentGID = getcharid(2);
-                
-                if (.@CurrentGID == 0) {
-                    warp "morocc", 0, 0;
-                }
-                else if (.@CurrentGID != .@WinnerGID) {
-                    warp "prontera", 0, 0;
-                    dispbottom "The Emperium has shifted! You have been relocated.";
-                }
-                else {
-                    specialeffect 168; 
-                    dispbottom "Victory! Your guild holds the ground.";
-                }
-            }
-        }
-        detachrid();
-    }
-
-    sleep 1000;
-    if (.Active) callsub Sub_SpawnEmp;
-    end;
-
-// ---------------- CLEANUP ----------------
-OnEndEvent:
-    stopnpctimer;
-    .Active = 0;
-
-    killmonster "prontera", strnpcinfo(3)+"::OnEmpDead";
-
-    // Re-enable NPCs
-    getmapunits "prontera", BL_NPC, .@NpcIDs;
-    for (.@i = 0; .@i < getarraysize(.@NpcIDs); .@i++) {
-        // Do not touch the Flag NPC
-        if (strnpcinfo(2, .@NpcIDs[.@i]) != "Prontera Conqueror") {
-            enablenpc .@NpcIDs[.@i];
-        }
-    }
-
-    removemapflag "prontera", mf_pvp;
-    removemapflag "prontera", mf_gvg;
-    removemapflag "prontera", mf_nomineeffect;
-    removemapflag "prontera", mf_loadevent; 
-
-    announce "[Mini WoE]: Prontera has returned to peace.", bc_all|bc_blue;
-    end;
+OnAgitEnd:
+	GvgOff "pronterawoe";
+	KillMonster "pronterawoe", "Gld_Agit_Manager_Custom::OnAgitBreak";
+	end;
 }
 
-// ---------------- THE FLAG NPC ----------------
-// 722 = Guild Flag Sprite
-prontera,100,100,4	script	Prontera Conqueror	722,{
-
-    mes "[Prontera Conqueror]";
-    if ($MiniWoE_GID) {
-        mes "This territory is currently held by:";
-        mes "^0055FF" + getguildname($MiniWoE_GID) + "^000000";
-    } else {
-        mes "This territory is currently neutral.";
-    }
-    close;
-
-OnUpdate:
-    flagemblem $MiniWoE_GID;
-    end;
+// --- CONTROLLER: Handles Timing & Advanced Rewards ---
+// ------------------------------------------------------------------------------
+-	script	PronteraWoE_Controller	-1,{
 
 OnInit:
-    if ($MiniWoE_GID) {
-        flagemblem $MiniWoE_GID;
-    }
-    end;
+	bindatcmd "prtwoestart", strnpcinfo(3)+"::OnCommandStart", 99, 99;
+	bindatcmd "prtwoestop", strnpcinfo(3)+"::OnCommandStop", 99, 99;
+	$PRT_WOE_Active = 0;
+
+	// --- REWARD CONFIGURATION ---
+	// [1] Enable Rewards | [8] Duplicate IP check
+	set .Options, 1|8; 
+	setarray .reward_id[0], 126000, 126003; 
+	setarray .reward_amount[0], 2, 20;
+	set .reward_zeny, 3000000;
+	
+	// Internal script variables needed for the logic
+	set .reward_id_size, getarraysize(.reward_id);
+	set .Castles$[0], "pronterawoe";
+	set .total_castle, 1;
+	end;
+
+OnMinute00:
+	if (gettime(DT_DAYOFWEEK) == 0) {
+		if (gettime(DT_HOUR) == 20 && !$PRT_WOE_Active) goto OnStart;
+		if (gettime(DT_HOUR) == 21 && $PRT_WOE_Active) goto OnStop;
+	}
+	end;
+
+OnCommandStart:
+	if ($PRT_WOE_Active) { dispbottom "Prontera WoE is already active."; end; }
+	goto OnStart;
+
+OnCommandStop:
+	if (!$PRT_WOE_Active) { dispbottom "Prontera WoE is not active."; end; }
+	goto OnStop;
+
+OnStart:
+	$PRT_WOE_Active = 1;
+	donpcevent "Gld_Agit_Manager_Custom::OnAgitStart";
+	announce "[Prontera WoE]: The battle has begun!", bc_all|bc_woe;
+	end;
+
+OnStop:
+	$PRT_WOE_Active = 0;
+	donpcevent "Gld_Agit_Manager_Custom::OnAgitEnd";
+	set .@winner, GetCastleData("pronterawoe", CD_GUILD_ID);
+	
+	if (.@winner > 0) {
+		announce "[Prontera WoE]: War is over! Winner: [" + getguildname(.@winner) + "]", bc_all|bc_woe;
+		// Trigger Advanced Reward Logic (passing bitmask 1 for first castle)
+		callsub OnReward, 1; 
+	} else {
+		announce "[Prontera WoE]: War is over! No guild claimed the castle.", bc_all|bc_woe;
+	}
+	maprespawnguildid "pronterawoe", .@winner, 3;
+	end;
+
+// --- YOUR CUSTOM REWARD LOGIC ---
+OnReward:
+	if (!.reward_id_size && !.reward_zeny)
+		return;
+
+	if (.Options&2) set .@str$,gettimestr("%B %d, %Y",21);
+	freeloop(1);
+	for(set .@i,0; .@i<.total_castle; set .@i,.@i+1) {
+		if (getarg(0)&(1<<.@i)) {
+			set .@gid, getcastledata(.Castles$[.@i],1);
+			if (!.@gid)
+				continue;
+
+			getguildmember( .@gid, 1, .@cid );
+			.@size_guild = getguildmember( .@gid, 2, .@aid );
+
+			if( .Options&4 ){
+				.@master_cid = getguildmasterid( .@gid );
+				.@index = inarray(.@cid, .@master_cid);
+				.@master_aid = .@aid[.@index];
+				cleararray( .@cid, 0, .@size_guild );
+				cleararray( .@aid, 0, .@size_guild );
+				.@size_guild = 1;
+				.@cid[0] = .@master_cid;
+				.@aid[0] = .@master_aid;
+			}
+			else if (.Options&8) {
+				for ( .@j = 0; .@j < .@size_guild; ++.@j ) {
+					.@is_online[.@j] = isloggedin( .@aid[.@j], .@cid[.@j] );
+					if (.@is_online[.@j])
+						.@ip$ = replacestr(getcharip(.@aid[.@j]),".","a");
+					else {
+						if (query_sql("SELECT `last_ip` FROM `login` WHERE `account_id` = '" + .@aid[.@j] + "'", .@last_ip$) < 1)
+							continue;
+						.@ip$ = replacestr(.@last_ip$, ".", "a");
+					}
+					.@variable$ = ".@ip_" + .@i + "_" + .@ip$;
+					.@index = getd(.@variable$) - 1;
+					if (.@index >= 0) {
+						if (.@is_online[.@j]) {
+							.@tmp_account_id[.@index] = .@aid[.@j];
+							.@tmp_char_id[.@index] = .@cid[.@j];
+						}
+						continue;
+					}
+					setd .@variable$, .@j+1;
+					.@tmp_account_id[.@k] = .@aid[.@j];
+					.@tmp_char_id[.@k] = .@cid[.@j];
+					.@k++;
+				}
+				copyarray .@aid[0], .@tmp_account_id[0], .@k;
+				copyarray .@cid[0], .@tmp_char_id[0], .@k;
+				.@size_guild = .@k;
+			}
+			for(set .@j,0; .@j<.@size_guild; set .@j,.@j+1) {
+				.@online = isloggedin(.@aid[.@j],.@cid[.@j]);
+				if (.Options&2) {
+					if (.@online || !(.Options&16)) {
+						.@charid = .@cid[.@j];
+						.@sender$ = "no-reply";
+						.@title$ = "** Siege Reward: "+getcastlename(.Castles$[.@i])+" **";
+						.@body$ = "Brave one,\r\n \r\n Congratulations!\r\n Your guild has successfully occupied\r\n territory in the War of Emperium on\r\n "+.@str$+".\r\n \r\n \r\n \r\n \r\n [ Your reward is attached. ]";
+						if (.reward_id_size)
+							mail .@charid, .@sender$, .@title$, .@body$, .reward_zeny, .reward_id, .reward_amount;
+						else
+							mail .@charid, .@sender$, .@title$, .@body$, .reward_zeny;
+						if (PACKETVER < 20150513 && !getd(".@str_"+.@cid[.@j]) && .@online) {
+							setd ".@str_"+.@cid[.@j],1;
+							message rid2name(.@aid[.@j]),"You've got mail!";
+						}
+					}
+				}
+				else if (.@online) {
+					attachrid( .@aid[.@j], true );
+					.@castle_name$ = getcastlename(.Castles$[.@i]);
+					for ( .@k = 0; .@k < .reward_id_size; .@k++ ) {
+						if (checkweight(.reward_id[.@k], .reward_amount[.@k]))
+							getitem .reward_id[.@k], .reward_amount[.@k];
+						else
+							dispbottom "You can't receive x" + .reward_amount[.@k] + " " + getitemname(.reward_id[.@k]) + " because you're overweight.";
+					}
+					Zeny += .reward_zeny;
+					dispbottom "You have been rewarded for conquering " + .@castle_name$ + ".";
+					detachrid();
+				}
+			}
+		}
+	}
+	return;
+}
+
+// Visuals and Warpers
+// ------------------------------------------------------------------------------
+prontera,169,181,4	script	Illusion Prontera Owner	722,{
+	set .@owner, GetCastleData("pronterawoe", CD_GUILD_ID);
+	mes "[Illusion Prontera]";
+	if (.@owner) { mes "Current Owner: ^0055FF" + getguildname(.@owner) + "^000000"; }
+	else { mes "Neutral."; }
+	close;
+
+OnUpdate:
+OnInit:
+	set .@owner, GetCastleData("pronterawoe", CD_GUILD_ID);
+	if (.@owner) flagemblem .@owner;
+	else flagemblem 0;
+	end;
+}
+
+prontera,152,172,4	script	Attacker Warper	55,{
+	mes "[Attacker Warper]";
+	if ($PRT_WOE_Active == 0) {
+		mes "The War is not currently active.";
+		close;
+	}
+	if (getcharid(2) == 0) {
+		mes "^FF0000Guildless travelers are not permitted.^000000";
+	}
+	next;
+	if (select("Yes, send me in!:Cancel") == 2) close;
+	switch(rand(1,3)) {
+		case 1: warp "pronterawoe", 74, 206; end;
+		case 2: warp "pronterawoe", 156, 217; end;
+		case 3: warp "pronterawoe", 239, 206; end;
+	}
+	end;
+}
+
+prontera,160,172,4	script	Castle Defender	109,{ 
+	set .@owner, GetCastleData("pronterawoe", CD_GUILD_ID);
+	if (.@owner == 0 || getcharid(2) != .@owner) {
+		mes "[Defender]";
+		mes "Only the owning guild may use this fast travel.";
+		close;
+	}
+	mes "[Defender]"; mes "Welcome back, my lord."; next;
+	warp "pronterawoe", 156, 316;
+	end;
 }
