@@ -8,6 +8,7 @@
 	end;
 
 OnAgitStart:
+	// Warp out non-owners at start
 	MapRespawnGuildID "pronterawoe", GetCastleData("pronterawoe", CD_GUILD_ID), 6;
 	GvgOn "pronterawoe";
 	donpcevent "Gld_Agit_Manager_Custom::OnStartArena";
@@ -29,7 +30,10 @@ OnAgitBreak:
 	}
 	SetCastleData "pronterawoe", CD_GUILD_ID, .@GID;
 	mapannounce "pronterawoe", "The emperium has been destroyed.", bc_map|bc_woe, "0x00CCFF", FW_NORMAL, 12;
-	MapRespawnGuildID "pronterawoe", .@GID, 6;
+	
+	// Kick everyone EXCEPT the new owner (.@GID)
+	// Flag 2 = Kick Non-Guild Members
+	MapRespawnGuildID "pronterawoe", .@GID, 2;
 
 	// Capture Reward (Immediate for Breaker)
 	getitem 126004, 10; // Bronze Coin
@@ -62,13 +66,11 @@ OnInit:
 
 	// --- REWARD CONFIGURATION ---
 	// [1] Enable Rewards | [2] Enable Mailing | [8] IP Check | [16] Online only
-	// 1 + 2 + 8 + 16 = 27
 	set .Options, 1|2|8|16; 
 	setarray .reward_id[0], 126000, 126003; 
 	setarray .reward_amount[0], 2, 20;
 	set .reward_zeny, 3000000;
 	
-	// Internal script variables needed for the logic
 	set .reward_id_size, getarraysize(.reward_id);
 	set .Castles$[0], "pronterawoe";
 	set .total_castle, 1;
@@ -102,12 +104,15 @@ OnStop:
 	
 	if (.@winner > 0) {
 		announce "[Prontera WoE]: War is over! Winner: [" + getguildname(.@winner) + "]", bc_all|bc_woe;
-		// Trigger Advanced Reward Logic (passing bitmask 1 for first castle)
 		callsub OnReward, 1; 
 	} else {
 		announce "[Prontera WoE]: War is over! No guild claimed the castle.", bc_all|bc_woe;
 	}
-	maprespawnguildid "pronterawoe", .@winner, 3;
+	
+	// FIX: Use Flag 2 to Kick Everyone EXCEPT the Winner
+	// This allows the winners to stay and celebrate.
+	// If they log out, the 'nosave' mapflag will force them to their save point.
+	maprespawnguildid "pronterawoe", .@winner, 2;
 	end;
 
 // --- YOUR CUSTOM REWARD LOGIC ---
@@ -201,8 +206,33 @@ OnReward:
 	return;
 }
 
-// Visuals and Warpers
+// --- SECURITY & VISUALS ---
 // ------------------------------------------------------------------------------
+
+// This NPC ensures that if the war is NOT active,
+// only the Castle Owner (and GMs) can enter/stay on the map.
+// This effectively handles "logging back in" - if they log in and are not owner, they get kicked.
+-	script	PronteraWoE_Security	-1,{
+OnPCLoadMapEvent:
+	// Only run if on the WoE map
+	if (strcharinfo(3) != "pronterawoe") end;
+	
+	// If war is inactive
+	if (!$PRT_WOE_Active) {
+		// Allow GMs
+		if (getgmlevel() >= 99) end;
+		
+		// Allow Owner
+		set .@owner, GetCastleData("pronterawoe", CD_GUILD_ID);
+		if (.@owner > 0 && getcharid(2) == .@owner) end;
+
+		// Kick everyone else (Non-owners who logged in or warped in)
+		warp "prontera", 156, 191;
+		dispbottom "The War is over. You have been moved.";
+	}
+	end;
+}
+
 prontera,169,181,4	script	Illusion Prontera Owner	722,{
 	set .@owner, GetCastleData("pronterawoe", CD_GUILD_ID);
 	mes "[Illusion Prontera]";
@@ -250,13 +280,9 @@ prontera,160,172,4	script	Castle Defender	109,{
 	end;
 }
 
-
-pronterawoe	mapflag	gvg			// Enables GvG mechanics and damage reduction
-pronterawoe	mapflag	gvg_castle		// Designates the map as an official WoE castle
-pronterawoe	mapflag	noteleport		// Prevents Fly Wings and Teleport skill
-pronterawoe	mapflag	nowarp			// Prevents Acolyte Warp Portal skill
-pronterawoe	mapflag	nowarpto		// Prevents GMs or commands from warping into the map
-pronterawoe	mapflag	nosave	SavePoint	// Sends players to their save point on logout/death
-pronterawoe	mapflag	nomemo			// Prevents players from memoizing the map
-pronterawoe	mapflag	nopenalties		// Prevents EXP loss upon death
-pronterawoe	mapflag	noicewall		// Disables Ice Wall to prevent blocking paths
+pronterawoe	mapflag	gvg
+pronterawoe	mapflag	noteleport
+pronterawoe	mapflag	nowarp
+pronterawoe	mapflag	nowarpto
+pronterawoe	mapflag	nosave	SavePoint
+pronterawoe	mapflag	loadevent
