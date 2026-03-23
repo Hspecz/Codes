@@ -8,8 +8,9 @@
 
 			// [CUSTOM MOD] 1. Define Arrays
 			const char* s_str[] = { "S", "M", "L" };
-			const char* e_str[] = { "Neu", "Wat", "Ear", "Fir", "Wnd", "Poi", "Hol", "Drk", "Gho", "Und", "Prsm" };
-			const char* r_str[] = { "Form", "Und", "Brut", "Plnt", "Insc", "Fish", "Demn", "Demi", "Angl", "Drag", "Humn", "Dorm", "Titn", "Sinf", "Deit" };
+			const char* e_str[] = { "Neutral", "Water", "Earth", "Fire", "Wind", "Poison", "Holy", "Dark", "Ghost", "Undead", "Prismatic" };
+			const char* r_str[] = { "Formless", "Undead", "Brute", "Plant", "Insect", "Fish", "Demon", "Demihuman", "Angel", "Dragon", "Human", "Doram", "Titan", "Sinful", "Deity" };
+
 
 			// [CUSTOM MOD] 2. Calculate Stats Safely
 			int sz = cap_value(md->status.size, 0, 2);
