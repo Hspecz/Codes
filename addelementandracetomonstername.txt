@@ -6,71 +6,57 @@
 	case BL_MOB: {
 			mob_data *md = (mob_data *)bl;
 
-			// [CUSTOM MOD] 1. Define Names
-			char new_name[NAME_LENGTH];
-			
-			// [CUSTOM MOD]
-			const char* race_name[] = { "Form", "Und", "Brut", "Plnt", "Insc", "Fish", "Demn", "Demi", "Angl", "Drag", "Humn", "Dorm", "Titn", "Sinf", "Deit" };
-			const char* ele_name[] = { "Neu", "Wat", "Ear", "Fir", "Wnd", "Poi", "Hol", "Drk", "Gho", "Und", "Prsm" };
+			// [CUSTOM MOD] 1. Define Arrays
+			const char* s_str[] = { "S", "M", "L" };
+			const char* e_str[] = { "Neu", "Wat", "Ear", "Fir", "Wnd", "Poi", "Hol", "Drk", "Gho", "Und", "Prsm" };
+			const char* r_str[] = { "Form", "Und", "Brut", "Plnt", "Insc", "Fish", "Demn", "Demi", "Angl", "Drag", "Humn", "Dorm", "Titn", "Sinf", "Deit" };
 
-			// [CUSTOM MOD] 2. Calculate Stats
-			int ele_type = md->status.def_ele % 20; 
-			int ele_lv = md->status.def_ele / 20;
-			int race_id = md->status.race;
+			// [CUSTOM MOD] 2. Calculate Stats Safely
+			int sz = cap_value(md->status.size, 0, 2);
+			int el = cap_value(md->status.def_ele % 20, 0, 10); 
+			int rc = cap_value(md->status.race, 0, 14);
 
-			// [CUSTOM MOD] 3. VISUAL FIXES
-			// Fix A: If Level is 0, force it to display as 1 (Visual only)
-			if (ele_lv == 0) ele_lv = 1;
+			PACKET_ZC_ACK_REQNAMEALL packet = { 0 };
+			packet.packet_id = HEADER_ZC_ACK_REQNAMEALL;
+			packet.gid = bl->id;
 
-			// Fix B: Safety Checks
-			if (ele_type < 0 || ele_type > 10) ele_type = 0; 
-			if (race_id < 0 || race_id > 14) race_id = 0; // Ensures your Race 14 works
+			// 1. Bottom Line: Real Monster Name
+			safestrncpy(packet.name, md->name, NAME_LENGTH);
 
-			// [CUSTOM MOD] 4. Format Name
-			snprintf(new_name, sizeof(new_name), "%s %s-%s% d", md->name, race_name[race_id], ele_name[ele_type], ele_lv);
+			char top_name[NAME_LENGTH];
+			char top_title[NAME_LENGTH];
+			memset(top_name, 0, sizeof(top_name));
+			memset(top_title, 0, sizeof(top_title));
 
-			// --- SEND PACKET ---
-			if( md->guardian_data && md->guardian_data->guild_id ){
-				PACKET_ZC_ACK_REQNAMEALL packet = { 0 };
-				packet.packet_id = HEADER_ZC_ACK_REQNAMEALL;
-				packet.gid = bl->id;
-				
-				safestrncpy( packet.name, new_name, NAME_LENGTH ); 
-				safestrncpy( packet.guild_name, md->guardian_data->guild_name, NAME_LENGTH );
-				safestrncpy( packet.position_name, md->guardian_data->castle->castle_name, NAME_LENGTH );
-
-				clif_send(&packet, sizeof(packet), src, target);
-
-			} else if( battle_config.show_mob_info ){
-				PACKET_ZC_ACK_REQNAMEALL packet = { 0 };
-				packet.packet_id = HEADER_ZC_ACK_REQNAMEALL;
-				packet.gid = bl->id;
-				
-				safestrncpy( packet.name, new_name, NAME_LENGTH );
-
-				char mobhp[50]; 
-				char *str_p = mobhp;
-
-				if( battle_config.show_mob_info&4 )
-					str_p += sprintf( str_p, "Lv. %d | ", md->level );
-				if( battle_config.show_mob_info&1 )
-					str_p += sprintf( str_p, "HP: %u/%u | ", md->status.hp, md->status.max_hp );
-				if( battle_config.show_mob_info&2 )
-					str_p += sprintf( str_p, "HP: %u%% | ", get_percentage( md->status.hp, md->status.max_hp ) );
-
-				if( str_p != mobhp ){
-					*(str_p-3) = '\0';
-					safestrncpy( packet.party_name, mobhp, NAME_LENGTH );
-				}
-
-				clif_send(&packet, sizeof(packet), src, target);
-
+			// 2. Assign to the correct packet slot
+			if( md->guardian_data && md->guardian_data->guild_id ) {
+				// WoE Guardians: Keep their real Guild Name, put stats in Party slot
+				snprintf(top_name, sizeof(top_name), "[%s|%s|%s]", s_str[sz], e_str[el], r_str[rc]);
+				safestrncpy(packet.guild_name, md->guardian_data->guild_name, NAME_LENGTH);
+				safestrncpy(packet.position_name, md->guardian_data->castle->castle_name, NAME_LENGTH);
+				safestrncpy(packet.party_name, top_name, NAME_LENGTH);
 			} else {
-				PACKET_ZC_ACK_REQNAMEALL_NPC packet = { 0 };
-				packet.packet_id = HEADER_ZC_ACK_REQNAMEALL_NPC;
-				packet.gid = bl->id;
+				// NORMAL MONSTERS
+				// The client FORCES brackets around the position_name, so we put the HP inside it!
+				if( battle_config.show_mob_info ) {
+					snprintf(top_name, sizeof(top_name), "[%s|%s|%s]", s_str[sz], e_str[el], r_str[rc]);
+					if( battle_config.show_mob_info&2 )
+						snprintf(top_title, sizeof(top_title), "%u%%", get_percentage(md->status.hp, md->status.max_hp));
+					else if( battle_config.show_mob_info&1 )
+						snprintf(top_title, sizeof(top_title), "%uHP", md->status.hp);
+				} else {
+					// If HP is hidden in config, put the Race inside the brackets to prevent "[]"
+					snprintf(top_name, sizeof(top_name), "[%s|%s]", s_str[sz], e_str[el]);
+					snprintf(top_title, sizeof(top_title), "%s", r_str[rc]);
+				}
 				
-				safestrncpy(packet.name, new_name, NAME_LENGTH); 
+				safestrncpy(packet.guild_name, top_name, NAME_LENGTH);
+				safestrncpy(packet.position_name, top_title, NAME_LENGTH); // This gets the client's [ ]
+			}
+
+			clif_send(&packet, sizeof(packet), src, target);
+		}
+		break;
 				
 				clif_send(&packet, sizeof(packet), src, target);
 			}
