@@ -325,24 +325,17 @@ function	script	CalcNextMonday	{
 OnInit:
     .PointsPerKill = 1;
     
-    // Initialize Season ID if fresh install
     if ($MVP_Season_ID == 0) {
         $MVP_Season_ID = 1;
     }
 
-    // --- SERVER RELOAD IMMUNITY CHECK ---
-    // If this is the first time running, or the stored reset time is in the past:
-    // 1. Calculate the Target Reset Time (Next Monday)
-    // 2. If we missed a reset (Server was offline), trigger it NOW.
     if ($MVP_Next_Reset == 0) {
-        // First run ever: Set target to NEXT Monday
         $MVP_Next_Reset = callfunc("CalcNextMondayMVP");
     } else if (gettimetick(2) >= $MVP_Next_Reset) {
-        // We missed the scheduled reset! Trigger it immediately.
         callfunc "PerformMVPReset";
     }
 
-    setarray .Maps$[0], "prontera","moc_pryd06","lhz_dun03","gld2_prt","abbey02","ayo_dun02","lhz_dun04","ra_fild02","xmas_fild01","dic_dun02","beach_dun","iz_dun05","tur_dun04","lhz_dun02","jupe_core","moc_fild22","anthell02","odin_tem03","gon_dun03","gef_fild02","thana_boss","gef_fild10","ein_dun02","gef_fild14","moc_pryd04","dew_dun01","in_sphinx5","niflheim","moc_fild17","xmas_dun02","ice_dun03","kh_dun02","treasure02","moc_prydn2","pay_dun04","ra_san05","mosk_dun03","ama_dun03","thor_v03","gef_dun01","mjolnir_04","abyss_03","dic_dun03","prt_sewb4","pay_fild11","gef_dun02","gl_chyard","ra_fild03","ra_fild04","ve_fild01","ve_fild02","lou_dun03","prt_maze03","bra_dun02";
+    setarray .Maps$[0],"moc_pryd06","lhz_dun03","gld2_prt","abbey02","ayo_dun02","lhz_dun04","ra_fild02","xmas_fild01","dic_dun02","beach_dun","iz_dun05","tur_dun04","lhz_dun02","jupe_core","moc_fild22","anthell02","odin_tem03","gon_dun03","gef_fild02","thana_boss","gef_fild10","ein_dun02","gef_fild14","moc_pryd04","dew_dun01","in_sphinx5","niflheim","moc_fild17","xmas_dun02","ice_dun03","kh_dun02","treasure02","moc_prydn2","pay_dun04","ra_san05","mosk_dun03","ama_dun03","thor_v03","gef_dun01","mjolnir_04","abyss_03","dic_dun03","prt_sewb4","pay_fild11","gef_dun02","gl_chyard","ra_fild03","ra_fild04","ve_fild01","ve_fild02","lou_dun03","prt_maze03","bra_dun02";
     end;
 
 OnNPCKillEvent:
@@ -384,7 +377,7 @@ OnNPCKillEvent:
     }
     end;
 
-// --- SCHEDULED RESET (Every Monday at 00:00:00) ---
+//SCHEDULED RESET (Every Monday at 00:00:00) ---
 OnMon0000:
     callfunc "PerformMVPReset";
     end;
@@ -394,7 +387,6 @@ OnMon0000:
 //  MVP RANKER NPC
 // =============================================================
 prontera,154,196,5	script	MVP Ladder	891,{
-    // --- TIMER CALCULATION ---
     .@time_left = $MVP_Next_Reset - gettimetick(2);
     if (.@time_left < 0) {
         .@time_left = 0;
@@ -448,10 +440,8 @@ prontera,154,196,5	script	MVP Ladder	891,{
                 close;
             }
             close2;
-            // Call the main reset function in the background
             callfunc "PerformMVPReset";
             
-            // Use 'end' instead of 'close' because the window is already gone
             end;
     }
 OnInit: 
@@ -567,13 +557,10 @@ function	script	PerformMVPReset	{
     setarray .@achieves[0], 500050, 500051, 500052;
     setarray .@titles[0], 1050, 1051, 1052;
     
-    // A. Cache OLD winners
     setarray .@old_chars[0], $MVP_Rank_CharID[0], $MVP_Rank_CharID[1], $MVP_Rank_CharID[2];
     
-    // B. Fetch NEW Top 3
     .@count = query_sql("SELECT `char_reg_num`.char_id, `char`.account_id FROM `char_reg_num` LEFT JOIN `char` ON `char_reg_num`.char_id = `char`.char_id WHERE `char_reg_num`.`key`='C_MVP_LADDER' AND CAST(`char_reg_num`.`value` AS UNSIGNED) > 0 ORDER BY CAST(`char_reg_num`.`value` AS UNSIGNED) DESC LIMIT 3", .@new_chars, .@new_accs);
 
-    // C. STRIP OLD CHAMPIONS
     for (.@i = 0; .@i < 3; .@i++) {
         .@old = .@old_chars[.@i];
         
@@ -587,11 +574,17 @@ function	script	PerformMVPReset	{
             if (!.@is_still_winner) {
                 query_sql("SELECT `account_id` FROM `char` WHERE `char_id` = " + .@old, .@old_acc);
                 
-                if (attachrid(.@old_acc[0])) {
+                .@attached = attachrid(.@old_acc[0]);
+                
+                if (.@attached && getcharid(0) == .@old) {
+                    
                     achievementremove .@achieves[.@i];
-                    settitle .@titles[.@i], 0;
                     detachrid();
+                    
                 } else {
+
+                    if (.@attached) detachrid();
+                    
                     query_sql("DELETE FROM `achievement` WHERE `char_id` = " + .@old + " AND `id` = " + .@achieves[.@i]);
                     query_sql("UPDATE `char` SET `title_id` = 0 WHERE `char_id` = " + .@old + " AND `title_id` = " + .@titles[.@i]);
                 }
@@ -599,20 +592,26 @@ function	script	PerformMVPReset	{
         }
     }
 
-    // D. REWARD NEW CHAMPIONS
+
     if (.@count > 0) {
         $MVP_Winner_ID = .@new_chars[0];
         donpcevent "MVP Champion::OnUpdateLook";
         
-        // Wipe old array and save new winners
+
         deletearray $MVP_Rank_CharID;
         for (.@i = 0; .@i < .@count; .@i++) {
             $MVP_Rank_CharID[.@i] = .@new_chars[.@i];
             
-            if (attachrid(.@new_accs[.@i])) {
+
+            .@attached = attachrid(.@new_accs[.@i]);
+            
+
+            if (.@attached && getcharid(0) == .@new_chars[.@i]) {
                 achievementcomplete .@achieves[.@i]; 
                 detachrid();
             } else {
+
+                if (.@attached) detachrid();
                 query_sql("INSERT INTO `char_reg_num` (`char_id`, `key`, `index`, `value`) VALUES (" + .@new_chars[.@i] + ", 'P_PENDING_MVP_ACHIEVE', 0, " + .@achieves[.@i] + ") ON DUPLICATE KEY UPDATE `value`=" + .@achieves[.@i]);
             }
         }
@@ -632,7 +631,6 @@ function	script	PerformMVPReset	{
     return;
 }
 
-// --- 2. Calculate Timestamp for Next Monday 00:00 ---
 function	script	CalcNextMondayMVP	{
     .@now = gettimetick(2);
     .@today_dow = gettime(4); 
@@ -650,10 +648,14 @@ function	script	CalcNextMondayMVP	{
 
 -	script	MVP_Offline_Reward_Sync	-1,{
 OnPCLoginEvent:
+    sleep2 4000; 
+    
     if (P_PENDING_MVP_ACHIEVE > 0) {
         .@ach = P_PENDING_MVP_ACHIEVE;
         P_PENDING_MVP_ACHIEVE = 0;
+        
         achievementcomplete .@ach;
+        dispbottom "Congratulations! You received your MVP Achievement from the previous season!";
     }
     end;
 }
