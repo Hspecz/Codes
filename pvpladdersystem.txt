@@ -1,0 +1,325 @@
+// =============================================================
+//  Ruhn PvP Ladder System v1
+// =============================================================
+
+// --- PVP SHOP SETTINGS ---
+-	pointshop	PvP_Store_Win	-1,#C_PVP_POINTS,120006:1100,120007:1100,120008:1100,120009:1100,120010:1100,120011:1100;
+
+// --- PVP CONTROLLER ---
+-	script	PvP_Controller	-1,{
+
+OnInit:
+    .PointsPerKill = 1;
+    
+    // Initialize Season ID
+    if ($PVP_Season_ID == 0) {
+        $PVP_Season_ID = 1;
+    }
+
+    // --- SERVER RELOAD IMMUNITY CHECK ---
+    // Checks if we missed the scheduled reset while the server was offline.
+    if ($PVP_Next_Reset == 0) {
+        callfunc "CalcNextMondayPvP"; // First run
+    } else if (gettimetick(2) >= $PVP_Next_Reset) {
+        callfunc "PerformPvPReset";   // Missed reset, trigger NOW
+    }
+
+    setarray .Maps$[0], "guild_vs3","pronterawoe","aldeg_cas01","arug_cas01","gefg_cas01","payg_cas01","prtg_cas01","schg_cas01","aldeg_cas02","arug_cas02","gefg_cas02","payg_cas02","prtg_cas02","schg_cas02","aldeg_cas03","arug_cas03","gefg_cas03","payg_cas03","payg_cas03","schg_cas03","aldeg_cas04","arug_cas04","gefg_cas04","payg_cas04","prtg_cas04","schg_cas04","aldeg_cas05","arug_cas05","gefg_cas05","payg_cas05","prtg_cas05","schg_cas05";
+    setarray .StreakMsg$[1], "First Blood!", "Double Kill!", "Triple Kill!", "Ultra Kill!", "Killing Spree!", "Dominating!", "Mega Kill!", "Unstoppable!", "Wicked Sick!", "M-m-m-m-Monster Kill!", "Godlike!", "Holy Shit!", "Ownage!";
+    end;
+
+OnPCKillEvent:
+    .@killer_id = getcharid(3);
+    
+    if (.@killer_id == killedrid) {
+        end;
+    }
+
+    .@map$ = strcharinfo(3);
+    .@valid_map = 0;
+    
+    for (.@i = 0; .@i < getarraysize(.Maps$); .@i++) {
+        if (.@map$ == .Maps$[.@i]) {
+            .@valid_map = 1;
+            break;
+        }
+    }
+    
+    if (!.@valid_map) {
+        end;
+    }
+
+    if (attachrid(killedrid)) {
+        @battle_streak = 0; 
+        detachrid();
+    }
+
+    if (attachrid(.@killer_id)) {
+        percentheal 100, 100;
+        specialeffect2 14;
+        
+        // --- SEASON CHECK ---
+        if (C_PVP_Season_Track != $PVP_Season_ID) {
+            C_PVP_LADDER = 0;
+            C_PVP_Season_Track = $PVP_Season_ID;
+            dispbottom "New PvP Season started! Your rank score has been reset.";
+        }
+
+        #C_PVP_POINTS += .PointsPerKill;
+        C_PVP_LADDER += .PointsPerKill;
+        
+        dispbottom "---------------------------------------------------";
+        dispbottom "You gained +" + .PointsPerKill + " PvP Points | Total: " + #C_PVP_POINTS;
+        dispbottom "Ladder Score: " + C_PVP_LADDER;
+        dispbottom "---------------------------------------------------";
+        
+        @battle_streak++;
+        .@s_val = (@battle_streak > 13) ? 13 : @battle_streak;
+        .@msg$ = .StreakMsg$[.@s_val];
+        
+        if (@battle_streak < 3) {
+            dispbottom .@msg$ + " (" + @battle_streak + " kill streak)";
+        } else {
+            // Changed bc_blue|bc_all to 0 to prevent crashes
+            announce strcharinfo(0) + " is " + .@msg$ + " (" + @battle_streak + " streak)", 0;
+        }
+    }
+    end;
+
+// --- SCHEDULED RESET (Every Monday at 00:00:00) ---
+OnMon0000:
+    callfunc "PerformPvPReset";
+    end;
+}
+
+// =============================================================
+//  PVP RANKER NPC
+// =============================================================
+prontera,157,196,4	script	PvP Ladder	891,{
+    // --- TIMER CALCULATION ---
+    .@time_left = $PVP_Next_Reset - gettimetick(2);
+    if (.@time_left < 0) {
+        .@time_left = 0;
+    }
+    
+    .@d = .@time_left / 86400;
+    .@h = (.@time_left % 86400) / 3600;
+    .@m = (.@time_left % 3600) / 60;
+
+    mes "[PvP Ranker]";
+    mes "Top PvP Killers.";
+    mes "Resets every Monday.";
+    mes " ";
+    mes "Time until Reset:";
+    mes "^FF0000" + .@d + " Days, " + .@h + " Hours, " + .@m + " Mins^000000";
+    next;
+
+    switch(select("View Ladder.", "My Stats.", "PvP Shop.", (getgmlevel() >= 99) ? "RESET SEASON" : "")) {
+
+        case 1:
+            mes "[PvP Rank]";
+            if (!query_sql("SELECT `char`.`name`, `char_reg_num`.`value` FROM `char` LEFT JOIN `char_reg_num` ON `char`.`char_id` = `char_reg_num`.`char_id` WHERE `char_reg_num`.`key` = 'C_PVP_LADDER' ORDER BY CAST(`char_reg_num`.`value` AS UNSIGNED) DESC LIMIT 10", .@name$, .@points)) {
+                mes "No kills recorded yet.";
+                close;
+            }
+            
+            for (.@i = 0; .@i < getarraysize(.@name$); .@i++) {
+                mes (.@i+1) + ". ^005500" + .@name$[.@i] + "^000000 - " + .@points[.@i] + " Pts";
+            }
+            close;
+
+        case 2:
+            mes "[My PvP Stats]";
+            if (C_PVP_Season_Track != $PVP_Season_ID) {
+                mes "Season Score: 0";
+            } else {
+                mes "Season Score: " + C_PVP_LADDER;
+            }
+            mes "PvP Points: " + #C_PVP_POINTS;
+            close;
+
+        case 3:
+            mes "[PvP Shop]";
+            mes "You have ^005500" + #C_PVP_POINTS + "^000000 PvP Points.";
+            callshop "PvP_Store_Win", 1;
+            end;
+
+        case 4:
+            mes "[GM Admin]";
+            mes "Force Reset the SEASON LADDER?";
+            if (select("Yes:No") == 2) {
+                close;
+            }
+            
+            // Call Main Reset Function
+            callfunc "PerformPvPReset";
+            announce "[PvP Ladder]: The Rankings have been reset by a GM!", 0;
+            close;
+    }
+
+OnInit: 
+    initnpctimer; 
+    end;
+
+OnTimer1000: 
+    showscript "PvP Ladder"; 
+    setnpctimer 0; 
+    end;
+}
+
+// =============================================================
+//  THE PVP CHAMPION STATUE (Smart Update)
+// =============================================================
+prontera,159,193,4	script	PvP Champion	4002,{ 
+    mes "[PvP Champion]";
+    
+    if ($PVP_Winner_ID == 0) {
+        mes "The season has just begun.";
+    } else {
+        query_sql("SELECT name FROM `char` WHERE char_id="+$PVP_Winner_ID, .@current_name$);
+        if (.@current_name$ == "") {
+            .@current_name$ = "Unknown Champion";
+        }
+        
+        mes "I am ^005500" + .@current_name$ + "^000000.";
+        mes "Rank 1 PvP last season!";
+    }
+    close;
+
+// --- FORCE REFRESH ---
+OnUpdateLook:
+    // Safety
+    if ($PVP_Winner_ID == 0) { 
+        initnpctimer; 
+        end; 
+    }
+
+    // 1. Fetch FRESH data from Database
+    if (!query_sql("SELECT name, class, clothes_color, hair, hair_color, head_top, head_mid, head_bottom, weapon, shield, robe, sex, body FROM `char` WHERE char_id = "+$PVP_Winner_ID, .@name$, .@class, .@clothes_color, .@hair, .@hair_color, .@top, .@mid, .@bot, .@weapon, .@shield, .@robe, .@sex$, .@body)) {
+        initnpctimer; 
+        end;
+    }
+
+    // 2. Update Global Variables
+    $PVP_S_Name$ = .@name$; 
+    $PVP_S_Class = .@class; 
+    $PVP_S_ClothColor = .@clothes_color;
+    $PVP_S_Hair = .@hair; 
+    $PVP_S_HairColor = .@hair_color; 
+    $PVP_S_Top = .@top;
+    $PVP_S_Mid = .@mid; 
+    $PVP_S_Bot = .@bot; 
+    $PVP_S_Weapon = .@weapon;
+    $PVP_S_Shield = .@shield; 
+    $PVP_S_Robe = .@robe; 
+    $PVP_S_Sex$ = .@sex$; 
+    $PVP_S_Body = .@body;
+
+    // 3. Apply Look to Statue
+    disablenpc "PvP Champion";
+    .@id = getnpcid(0);
+    
+    setunitdata .@id, UNPC_HEADTOP, 0;
+    setunitdata .@id, UNPC_HEADMIDDLE, 0;
+    setunitdata .@id, UNPC_HEADBOTTOM, 0;
+    setunitdata .@id, UNPC_ROBE, 0;
+
+    setunitdata .@id, UNPC_CLASS,        .@class;
+    setunitdata .@id, UNPC_SEX,          (.@sex$ == "F" || .@sex$ == "0") ? SEX_FEMALE : SEX_MALE;
+    setunitdata .@id, UNPC_HAIRSTYLE,    .@hair;
+    setunitdata .@id, UNPC_HAIRCOLOR,    .@hair_color;
+    setunitdata .@id, UNPC_CLOTHCOLOR,   .@clothes_color;
+    setunitdata .@id, UNPC_BODY2,        (.@body > 0) ? .@body : 0;
+    setunitdata .@id, UNPC_HEADTOP,      .@top;
+    setunitdata .@id, UNPC_HEADMIDDLE,   .@mid; 
+    setunitdata .@id, UNPC_HEADBOTTOM,   .@bot;
+    setunitdata .@id, UNPC_ROBE,         .@robe;
+
+    setnpcdisplay "PvP Champion", .@name$;
+
+    enablenpc "PvP Champion";
+    initnpctimer;
+    end;
+
+OnInit:
+    sleep 2000;
+    initnpctimer; 
+    goto OnUpdateLook;
+
+// --- SMART TIMER ---
+OnTimer1000: 
+    showscript "Rank 1 PvP"; 
+    .tick++;
+    
+    if (.tick >= 5) {
+        .tick = 0;
+        
+        if ($PVP_Winner_ID > 0) {
+            if (query_sql("SELECT name, class, clothes_color, hair, hair_color, head_top, head_mid, head_bottom, weapon, shield, robe, sex, body FROM `char` WHERE char_id = "+$PVP_Winner_ID, .@n$, .@cl, .@clc, .@h, .@hc, .@t, .@m, .@b, .@w, .@s, .@r, .@sx$, .@bd)) {
+                if (.@n$ != $PVP_S_Name$ || .@cl != $PVP_S_Class || .@bd != $PVP_S_Body || .@h != $PVP_S_Hair || .@hc != $PVP_S_HairColor || .@clc != $PVP_S_ClothColor || .@t != $PVP_S_Top || .@m != $PVP_S_Mid || .@b != $PVP_S_Bot || .@r != $PVP_S_Robe) {
+                    stopnpctimer;
+                    goto OnUpdateLook;
+                }
+            }
+        }
+    }
+    
+    setnpctimer 0; 
+    end;
+}
+
+// =============================================================
+//  GLOBAL FUNCTIONS
+// =============================================================
+
+// --- 1. Main Reset Logic ---
+function	script	PerformPvPReset	{
+    announce "[PvP Ladder]: The Weekly PvP Season has ended!", 0;
+    
+    // A. Update Statue
+    // Logic: If we find a new winner, update the ID. 
+    // If NO ONE is found (query returns 0), we DO NOTHING.
+    // This ensures the previous Rank 1 stays on the statue.
+    if (query_sql("SELECT char_id FROM char_reg_num WHERE `key`='C_PVP_LADDER' ORDER BY CAST(`value` AS UNSIGNED) DESC LIMIT 1", .@top_char_id)) {
+        $PVP_Winner_ID = .@top_char_id;
+    }
+    
+    // Refresh Statue Appearance
+    donpcevent "PvP Champion::OnUpdateLook";
+    
+    // B. Increment Season & Wipe Data
+    $PVP_Season_ID++; 
+    query_sql "DELETE FROM `char_reg_num` WHERE `key`='C_PVP_LADDER'"; 
+    announce "[PvP Ladder]: Rankings reset! The Statue has been updated.", 0;
+    
+    // C. Calculate Next Reset
+    callfunc "CalcNextMondayPvP";
+    
+    return;
+}
+
+// --- 2. Calculate Timestamp for Next Monday 00:00 ---
+function	script	CalcNextMondayPvP	{
+    .@now = gettimetick(2);
+    .@today_dow = gettime(4); // 0=Sun, 1=Mon...
+    
+    // Seconds passed today
+    .@seconds_today = (gettime(3) * 3600) + (gettime(2) * 60) + gettime(1);
+    
+    // Seconds remaining in current day
+    .@seconds_til_midnight = 86400 - .@seconds_today;
+    
+    // Calculate days to add to reach next Monday
+    .@days_to_add = (8 - .@today_dow) % 7;
+    if (.@days_to_add == 0) {
+        .@days_to_add = 7;
+    }
+    
+    // Calculate total seconds to add
+    .@total_add_seconds = .@seconds_til_midnight + ((.@days_to_add - 1) * 86400);
+    
+    // Save to Global Variable
+    $PVP_Next_Reset = .@now + .@total_add_seconds;
+    
+    return;
+}
