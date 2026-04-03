@@ -296,3 +296,364 @@ function	script	CalcNextMonday	{
     
     return;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// =============================================================
+//  Ruhn MvP Ladder System v2
+// =============================================================
+
+// --- MVP SHOP SETTINGS ---
+-	pointshop	MVP_Store_Win	-1,#C_MVP_POINTS,120000:1400,120001:1400,120002:1400,120003:1400,120004:1400,120005:1400,128014:15000;
+
+// --- MVP CONTROLLER ---
+-	script	MVP_Controller	-1,{
+
+OnInit:
+    .PointsPerKill = 1;
+    
+    // Initialize Season ID if fresh install
+    if ($MVP_Season_ID == 0) {
+        $MVP_Season_ID = 1;
+    }
+
+    // --- SERVER RELOAD IMMUNITY CHECK ---
+    // If this is the first time running, or the stored reset time is in the past:
+    // 1. Calculate the Target Reset Time (Next Monday)
+    // 2. If we missed a reset (Server was offline), trigger it NOW.
+    if ($MVP_Next_Reset == 0) {
+        // First run ever: Set target to NEXT Monday
+        $MVP_Next_Reset = callfunc("CalcNextMondayMVP");
+    } else if (gettimetick(2) >= $MVP_Next_Reset) {
+        // We missed the scheduled reset! Trigger it immediately.
+        callfunc "PerformMVPReset";
+    }
+
+    setarray .Maps$[0], "prontera","moc_pryd06","lhz_dun03","gld2_prt","abbey02","ayo_dun02","lhz_dun04","ra_fild02","xmas_fild01","dic_dun02","beach_dun","iz_dun05","tur_dun04","lhz_dun02","jupe_core","moc_fild22","anthell02","odin_tem03","gon_dun03","gef_fild02","thana_boss","gef_fild10","ein_dun02","gef_fild14","moc_pryd04","dew_dun01","in_sphinx5","niflheim","moc_fild17","xmas_dun02","ice_dun03","kh_dun02","treasure02","moc_prydn2","pay_dun04","ra_san05","mosk_dun03","ama_dun03","thor_v03","gef_dun01","mjolnir_04","abyss_03","dic_dun03","prt_sewb4","pay_fild11","gef_dun02","gl_chyard","ra_fild03","ra_fild04","ve_fild01","ve_fild02","lou_dun03","prt_maze03","bra_dun02";
+    end;
+
+OnNPCKillEvent:
+    if (!getmonsterinfo(killedrid, MOB_MVPEXP)) {
+        end;
+    }
+
+    .@killer_id = getcharid(3);
+    .@map$ = strcharinfo(3);
+    .@valid_map = 0;
+    
+    for (.@i = 0; .@i < getarraysize(.Maps$); .@i++) {
+        if (.@map$ == .Maps$[.@i]) {
+            .@valid_map = 1;
+            break;
+        }
+    }
+    
+    if (!.@valid_map) {
+        end;
+    }
+
+    if (attachrid(.@killer_id)) {
+        // Season Check
+        if (C_MVP_Season_Track != $MVP_Season_ID) {
+            C_MVP_LADDER = 0;
+            C_MVP_Season_Track = $MVP_Season_ID;
+            dispbottom "New MVP Season started! Your rank score has been reset.";
+        }
+
+        #C_MVP_POINTS += .PointsPerKill;
+        C_MVP_LADDER += .PointsPerKill;
+        
+        dispbottom "---------------------------------------------------";
+        dispbottom "You gained +" + .PointsPerKill + " MvP Points | Total: " + #C_MVP_POINTS;
+        dispbottom "Ladder Score: " + C_MVP_LADDER;
+        dispbottom "---------------------------------------------------";
+        announce "[MVP]: Player [" + strcharinfo(0) + "] has killed " + getmonsterinfo(killedrid, MOB_NAME) + " at " + strcharinfo(3) + "!", 0;
+    }
+    end;
+
+// --- SCHEDULED RESET (Every Monday at 00:00:00) ---
+OnMon0000:
+    callfunc "PerformMVPReset";
+    end;
+}
+
+// =============================================================
+//  MVP RANKER NPC
+// =============================================================
+prontera,154,196,5	script	MVP Ladder	891,{
+    // --- TIMER CALCULATION ---
+    .@time_left = $MVP_Next_Reset - gettimetick(2);
+    if (.@time_left < 0) {
+        .@time_left = 0;
+    }
+    
+    .@d = .@time_left / 86400;
+    .@h = (.@time_left % 86400) / 3600;
+    .@m = (.@time_left % 3600) / 60;
+    
+    mes "[MVP Ranker]";
+    mes "Top MVP Killers.";
+    mes "Resets every Monday.";
+    mes " ";
+    mes "Time until Reset:";
+    mes "^FF0000" + .@d + " Days, " + .@h + " Hours, " + .@m + " Mins^000000";
+    next;
+    
+    switch(select("View Ladder.", "My Stats.", "MVP Shop.", (getgmlevel() >= 99) ? "RESET SEASON" : "")) {
+        case 1:
+            mes "[MVP Rank]";
+            if (!query_sql("SELECT `char`.`name`, `char_reg_num`.`value` FROM `char` LEFT JOIN `char_reg_num` ON `char`.`char_id` = `char_reg_num`.`char_id` WHERE `char_reg_num`.`key` = 'C_MVP_LADDER' ORDER BY CAST(`char_reg_num`.`value` AS UNSIGNED) DESC LIMIT 10", .@name$, .@points)) {
+                mes "No kills recorded yet.";
+                close;
+            }
+            
+            for (.@i = 0; .@i < getarraysize(.@name$); .@i++) {
+                mes (.@i+1) + ". ^005500" + .@name$[.@i] + "^000000 - " + .@points[.@i] + " Pts";
+            }
+            close;
+            
+        case 2:
+            mes "[My MVP Stats]";
+            if (C_MVP_Season_Track != $MVP_Season_ID) {
+                mes "Season Score: 0";
+            } else {
+                mes "Season Score: " + C_MVP_LADDER;
+            }
+            mes "MvP Points: " + #C_MVP_POINTS;
+            close;
+            
+        case 3:
+            mes "[MVP Shop]";
+            mes "You have ^005500" + #C_MVP_POINTS + "^000000 MvP Points.";
+            callshop "MVP_Store_Win", 1;
+            end;
+            
+        case 4:
+            mes "[GM Admin]";
+            mes "Force Reset the SEASON LADDER?";
+            if (select("Yes:No") == 2) {
+                close;
+            }
+            close2;
+            // Call the main reset function in the background
+            callfunc "PerformMVPReset";
+            
+            // Use 'end' instead of 'close' because the window is already gone
+            end;
+    }
+OnInit: 
+    initnpctimer; 
+    end;
+
+OnTimer1000: 
+    showscript "MvP Ladder"; 
+    setnpctimer 0; 
+    end;
+}
+
+// =============================================================
+//  THE MVP CHAMPION STATUE
+// =============================================================
+prontera,152,193,4	script	MVP Champion	4002,{ 
+    mes "[MVP Champion]";
+    
+    if ($MVP_Winner_ID == 0) {
+        mes "The season has just begun.";
+    } else {
+        query_sql("SELECT name FROM `char` WHERE char_id="+$MVP_Winner_ID, .@current_name$);
+        if (.@current_name$ == "") {
+            .@current_name$ = "Unknown Champion";
+        }
+        
+        mes "I am ^005500" + .@current_name$ + "^000000.";
+        mes "Rank 1 MvP last season!";
+    }
+    close;
+
+OnUpdateLook:
+    if ($MVP_Winner_ID == 0) { 
+        initnpctimer; 
+        end; 
+    }
+    
+    if (!query_sql("SELECT name, class, clothes_color, hair, hair_color, head_top, head_mid, head_bottom, weapon, shield, robe, sex, body FROM `char` WHERE char_id = "+$MVP_Winner_ID, .@name$, .@class, .@clothes_color, .@hair, .@hair_color, .@top, .@mid, .@bot, .@weapon, .@shield, .@robe, .@sex$, .@body)) {
+        initnpctimer; 
+        end;
+    }
+
+    $MVP_S_Name$ = .@name$; 
+    $MVP_S_Class = .@class; 
+    $MVP_S_ClothColor = .@clothes_color;
+    $MVP_S_Hair = .@hair; 
+    $MVP_S_HairColor = .@hair_color; 
+    $MVP_S_Top = .@top;
+    $MVP_S_Mid = .@mid; 
+    $MVP_S_Bot = .@bot; 
+    $MVP_S_Weapon = .@weapon;
+    $MVP_S_Shield = .@shield; 
+    $MVP_S_Robe = .@robe; 
+    $MVP_S_Sex$ = .@sex$; 
+    $MVP_S_Body = .@body;
+
+    disablenpc "MVP Champion";
+    .@id = getnpcid(0);
+    
+    setunitdata .@id, UNPC_HEADTOP, 0;
+    setunitdata .@id, UNPC_HEADMIDDLE, 0;
+    setunitdata .@id, UNPC_HEADBOTTOM, 0;
+    setunitdata .@id, UNPC_ROBE, 0;
+    setunitdata .@id, UNPC_CLASS, .@class;
+    setunitdata .@id, UNPC_SEX, (.@sex$ == "F" || .@sex$ == "0") ? SEX_FEMALE : SEX_MALE;
+    setunitdata .@id, UNPC_HAIRSTYLE, .@hair;
+    setunitdata .@id, UNPC_HAIRCOLOR, .@hair_color;
+    setunitdata .@id, UNPC_CLOTHCOLOR, .@clothes_color;
+    setunitdata .@id, UNPC_BODY2, (.@body > 0) ? .@body : 0;
+    setunitdata .@id, UNPC_HEADTOP, .@top;
+    setunitdata .@id, UNPC_HEADMIDDLE, .@mid;
+    setunitdata .@id, UNPC_HEADBOTTOM, .@bot;
+    setunitdata .@id, UNPC_ROBE, .@robe;
+    
+    setnpcdisplay "MVP Champion", .@name$;
+    enablenpc "MVP Champion";
+    initnpctimer;
+    end;
+
+OnInit:
+    sleep 2000;
+    initnpctimer; 
+    goto OnUpdateLook;
+
+OnTimer1000: 
+    showscript "Rank 1 MvP"; 
+    .tick++;
+    
+    if (.tick >= 5) {
+        .tick = 0;
+        
+        if ($MVP_Winner_ID > 0) {
+            if (query_sql("SELECT name, class, clothes_color, hair, hair_color, head_top, head_mid, head_bottom, weapon, shield, robe, sex, body FROM `char` WHERE char_id = "+$MVP_Winner_ID, .@n$, .@cl, .@clc, .@h, .@hc, .@t, .@m, .@b, .@w, .@s, .@r, .@sx$, .@bd)) {
+                if (.@n$ != $MVP_S_Name$ || .@cl != $MVP_S_Class || .@bd != $MVP_S_Body || .@h != $MVP_S_Hair || .@hc != $MVP_S_HairColor || .@clc != $MVP_S_ClothColor || .@t != $MVP_S_Top || .@m != $MVP_S_Mid || .@b != $MVP_S_Bot || .@r != $MVP_S_Robe) {
+                    stopnpctimer;
+                    goto OnUpdateLook;
+                }
+            }
+        }
+    }
+    
+    setnpctimer 0; 
+    end;
+}
+
+// =============================================================
+//  GLOBAL FUNCTIONS
+// =============================================================
+function	script	PerformMVPReset	{
+    .@invoker_id = getcharid(3);
+    announce "[MVP Ladder]: The Weekly MVP Season has ended!", 0;
+    
+    setarray .@achieves[0], 500050, 500051, 500052;
+    setarray .@titles[0], 1050, 1051, 1052;
+    
+    // A. Cache OLD winners
+    setarray .@old_chars[0], $MVP_Rank_CharID[0], $MVP_Rank_CharID[1], $MVP_Rank_CharID[2];
+    
+    // B. Fetch NEW Top 3
+    .@count = query_sql("SELECT `char_reg_num`.char_id, `char`.account_id FROM `char_reg_num` LEFT JOIN `char` ON `char_reg_num`.char_id = `char`.char_id WHERE `char_reg_num`.`key`='C_MVP_LADDER' AND CAST(`char_reg_num`.`value` AS UNSIGNED) > 0 ORDER BY CAST(`char_reg_num`.`value` AS UNSIGNED) DESC LIMIT 3", .@new_chars, .@new_accs);
+
+    // C. STRIP OLD CHAMPIONS
+    for (.@i = 0; .@i < 3; .@i++) {
+        .@old = .@old_chars[.@i];
+        
+        if (.@old > 0) {
+            
+            .@is_still_winner = 0;
+            for (.@j = 0; .@j < .@count; .@j++) {
+                if (.@old == .@new_chars[.@j]) { .@is_still_winner = 1; break; }
+            }
+
+            if (!.@is_still_winner) {
+                query_sql("SELECT `account_id` FROM `char` WHERE `char_id` = " + .@old, .@old_acc);
+                
+                if (attachrid(.@old_acc[0])) {
+                    achievementremove .@achieves[.@i];
+                    settitle .@titles[.@i], 0;
+                    detachrid();
+                } else {
+                    query_sql("DELETE FROM `achievement` WHERE `char_id` = " + .@old + " AND `id` = " + .@achieves[.@i]);
+                    query_sql("UPDATE `char` SET `title_id` = 0 WHERE `char_id` = " + .@old + " AND `title_id` = " + .@titles[.@i]);
+                }
+            }
+        }
+    }
+
+    // D. REWARD NEW CHAMPIONS
+    if (.@count > 0) {
+        $MVP_Winner_ID = .@new_chars[0];
+        donpcevent "MVP Champion::OnUpdateLook";
+        
+        // Wipe old array and save new winners
+        deletearray $MVP_Rank_CharID;
+        for (.@i = 0; .@i < .@count; .@i++) {
+            $MVP_Rank_CharID[.@i] = .@new_chars[.@i];
+            
+            if (attachrid(.@new_accs[.@i])) {
+                achievementcomplete .@achieves[.@i]; 
+                detachrid();
+            } else {
+                query_sql("INSERT INTO `char_reg_num` (`char_id`, `key`, `index`, `value`) VALUES (" + .@new_chars[.@i] + ", 'P_PENDING_MVP_ACHIEVE', 0, " + .@achieves[.@i] + ") ON DUPLICATE KEY UPDATE `value`=" + .@achieves[.@i]);
+            }
+        }
+        announce "[MVP Ladder]: Rankings reset! New champions have been crowned.", 0;
+    } else {
+        deletearray $MVP_Rank_CharID;
+        $MVP_Winner_ID = 0;
+        donpcevent "MVP Champion::OnUpdateLook";
+    }
+    
+    if (.@invoker_id > 0) attachrid(.@invoker_id);
+    else detachrid();
+
+    $MVP_Season_ID++; 
+    query_sql "DELETE FROM `char_reg_num` WHERE `key`='C_MVP_LADDER'"; 
+    $MVP_Next_Reset = callfunc("CalcNextMondayMVP");
+    return;
+}
+
+// --- 2. Calculate Timestamp for Next Monday 00:00 ---
+function	script	CalcNextMondayMVP	{
+    .@now = gettimetick(2);
+    .@today_dow = gettime(4); 
+    .@seconds_today = (gettime(3) * 3600) + (gettime(2) * 60) + gettime(1);
+    .@seconds_til_midnight = 86400 - .@seconds_today;
+    .@days_to_add = (8 - .@today_dow) % 7;
+    
+    if (.@days_to_add == 0) {
+        .@days_to_add = 7;
+    }
+    
+    .@total_add_seconds = .@seconds_til_midnight + ((.@days_to_add - 1) * 86400);
+    return .@now + .@total_add_seconds;
+}
+
+-	script	MVP_Offline_Reward_Sync	-1,{
+OnPCLoginEvent:
+    if (P_PENDING_MVP_ACHIEVE > 0) {
+        .@ach = P_PENDING_MVP_ACHIEVE;
+        P_PENDING_MVP_ACHIEVE = 0;
+        achievementcomplete .@ach;
+    }
+    end;
+}
