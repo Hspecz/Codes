@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS `redeem_claims` (
 
 ALTER TABLE `redeem_codes` ADD COLUMN `creator_id` INT(11) NOT NULL DEFAULT 0;
 
+ALTER TABLE `redeem_codes` ADD COLUMN `message_id` VARCHAR(50) DEFAULT NULL;
+ALTER TABLE `redeem_codes` ADD COLUMN `expired_announced` TINYINT(1) NOT NULL DEFAULT 0;
+
 // Python Webhook
 import discord
 from discord.ext import commands, tasks
@@ -44,9 +47,9 @@ from datetime import datetime
 # ==========================================
 # CONFIGURATION
 # ==========================================
-STANDARD_CHANNEL_ID = YOUR_CHANNEL_ID
-STREAMER_CHANNEL_ID = YOUR_CHANNEL_ID
-VERIFY_CHANNEL_ID = YOUR_CHANNEL_ID
+STANDARD_CHANNEL_ID = YOUR_DISCORD_CHANNEL_ID
+STREAMER_CHANNEL_ID = YOUR_DISCORD_CHANNEL_ID
+VERIFY_CHANNEL_ID = YOUR_DISCORD_CHANNEL_ID
 
 DB_HOST = "127.0.0.1"        
 DB_USER = "YOUR_DATABASE_USERNAME"         
@@ -54,6 +57,7 @@ DB_PASS = "YOUR_DATABASE_PASSWORD"
 DB_NAME = "YOUR_DATABASE"        
 
 BOT_TOKEN = "YOUR_BOT_TOKEN"
+# ==========================================
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -67,19 +71,20 @@ def get_db_connection():
 @bot.event
 async def on_ready():
     print(f"✅ Bot is online and logged in as {bot.user}")
-    check_and_announce_codes.start() # Starts the 10-second auto-scanner
+    check_and_announce_codes.start() 
 
 @bot.command()
 async def verify(ctx, pin: str):
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        print("Bot lacks 'Manage Messages' permission to delete the PIN!")
+    except discord.NotFound:
+        pass
+
     if ctx.channel.id != VERIFY_CHANNEL_ID:
-        # Try to delete their message so they don't leak their PIN in public chat
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        
         warning = await ctx.send(f"❌ {ctx.author.mention}, please use the <#{VERIFY_CHANNEL_ID}> channel to verify your account!")
-        await warning.delete(delay=7)
+        await warning.delete(delay=7) # Deletes this warning after 7 seconds
         return
     try:
         db = get_db_connection()
@@ -89,21 +94,25 @@ async def verify(ctx, pin: str):
         result = cursor.fetchone()
 
         if not result:
-            await ctx.reply("❌ **Invalid PIN.** Please generate a new PIN in-game using `@notify`.")
+            msg = await ctx.send(f"❌ {ctx.author.mention}, **Invalid PIN.** Please generate a new PIN in-game using `@notify`.")
+            await msg.delete(delay=10)
             return
 
         if result['is_verified'] == 1:
-            await ctx.reply("⚠️ **This PIN has already been used.** Your account is already verified!")
+            msg = await ctx.send(f"⚠️ {ctx.author.mention}, **This PIN has already been used.** Your account is already verified!")
+            await msg.delete(delay=10)
             return
 
         discord_id = str(ctx.author.id)
         cursor.execute("UPDATE discord_verification SET is_verified = 1, discord_id = %s WHERE pin = %s", (discord_id, pin))
         db.commit()
 
-        await ctx.reply(f"✅ **Verification Successful!** Your Discord account is now securely linked to your game account. You may now claim Streamer Codes!")
+        msg = await ctx.send(f"✅ **Verification Successful!** {ctx.author.mention}, your Discord account is now securely linked. You may now claim Streamer Codes!")
+        await msg.delete(delay=15)
 
     except mysql.connector.Error as err:
-        await ctx.reply("Database Error. Please contact an admin.")
+        msg = await ctx.send(f"Database Error. Please contact an admin.")
+        await msg.delete(delay=10)
         print(f"DB Error: {err}")
     finally:
         if 'db' in locals() and db.is_connected():
@@ -115,6 +124,7 @@ async def check_and_announce_codes():
     try:
         db = get_db_connection()
         cursor = db.cursor(dictionary=True)
+        
         cursor.execute("SELECT code, item_ids, expiration, cooldown_mins FROM redeem_codes WHERE announced = 0")
         new_codes = cursor.fetchall()
         now = datetime.now()
@@ -126,6 +136,8 @@ async def check_and_announce_codes():
             cooldown = row['cooldown_mins']
             is_expired = exp_datetime < now
             status_tag = "🔴 **[EXPIRED]**" if is_expired else "🟢 **[ACTIVE]**"
+            
+            channel = None
 
             if code.startswith("LINK_"):
                 char_name = code.replace("LINK_", "")
@@ -146,10 +158,41 @@ async def check_and_announce_codes():
                 else: msg += f"❌ *This code has expired.*"
 
             if channel:
-                await channel.send(msg)
+                sent_msg = await channel.send(msg)
                 update_cursor = db.cursor()
-                update_cursor.execute("UPDATE redeem_codes SET announced = 1 WHERE code = %s", (code,))
+                update_cursor.execute("UPDATE redeem_codes SET announced = 1, message_id = %s WHERE code = %s", (str(sent_msg.id), code))
                 db.commit()
+
+        cursor.execute("SELECT code, message_id, expiration, cooldown_mins FROM redeem_codes WHERE announced = 1 AND expired_announced = 0 AND expiration <= NOW() AND code NOT LIKE 'LINK_%'")
+        expired_codes = cursor.fetchall()
+
+        for row in expired_codes:
+            code = row['code']
+            msg_id = row['message_id']
+            cooldown = row['cooldown_mins']
+            expires_str = row['expiration'].strftime('%Y-%m-%d %H:%M')
+
+            if msg_id:
+                target_channel_id = STREAMER_CHANNEL_ID if cooldown > 0 else STANDARD_CHANNEL_ID
+                channel = bot.get_channel(target_channel_id)
+                
+                if channel:
+                    try:
+                        # Rebuild the message entirely with the EXPIRED tags
+                        status_tag = "🔴 **[EXPIRED]**"
+                        if cooldown > 0:
+                            new_msg = f"📺 **STREAMER REWARD CODE!** {status_tag}\n\n**Code:** `{code}`\n**Type:** Reusable (Cooldown: {cooldown} Mins)\n**Expires:** {expires_str}\n\n❌ *This code has expired.*"
+                        else:
+                            new_msg = f"🎁 **STANDARD REWARD CODE!** {status_tag}\n\n**Code:** `{code}`\n**Type:** One-Time Use per Account\n**Expires:** {expires_str}\n\n❌ *This code has expired.*"
+                        
+                        discord_msg = await channel.fetch_message(int(msg_id))
+                        await discord_msg.edit(content=new_msg)
+                    except Exception as e:
+                        print(f"Could not edit message for {code}: {e}")
+            
+            update_cursor = db.cursor()
+            update_cursor.execute("UPDATE redeem_codes SET expired_announced = 1 WHERE code = %s", (code,))
+            db.commit()
 
     except Exception as e:
         print(f"Error in scanner: {e}")
